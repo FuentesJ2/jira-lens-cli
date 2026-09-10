@@ -15,10 +15,11 @@ The delivery model for each phase is vertical:
 
 ## Confirmed platform assumptions
 
-1. Target API: Jira Cloud REST API v3
-2. Local-first auth path for phase 1: basic auth with Atlassian email plus API token
-3. Initial scope: single issue retrieval only
-4. Deferred scope: graph traversal, linked-issue crawling, attachments, project-wide discovery workflows
+1. Target API: Jira Cloud REST API v3 or internal Jira Server/Data Center issue APIs, depending on the actual host
+2. Team-default phase-1 environment: `https://avjira` with Jira Server/Data Center-style REST behavior
+3. Team-default auth path for phase 1: basic auth with Jira username plus password
+4. Initial scope: single issue retrieval only
+5. Deferred scope: graph traversal, linked-issue crawling, attachments, project-wide discovery workflows
 
 ## Design constraints
 
@@ -40,11 +41,27 @@ This section captures build-time and workflow gotchas so the harness design stay
 4. CLI trust matters for this project, so raw API response output must remain a first-class path, not a debug-only option.
 5. When implementation details are uncertain, revisit the Jira Cloud REST API v3 docs before widening the contract.
 6. The active local Python version may be older than the version assumed during initial scaffolding, so compatibility claims and packaging metadata must be verified against the actual interpreter before adding newer stdlib features.
+7. First-run onboarding must not contaminate redirected JSON output, so prompts and setup messaging should go to stderr while data stays on stdout.
+8. The real Jira environment may not be Jira Cloud. If issue URLs resolve under an internal host such as `https://avjira`, the harness may need Jira Server or Data Center REST conventions instead of Cloud v3.
+9. Internal Jira onboarding must distinguish clearly between password-based basic auth and token-based auth. A generic `API token` prompt is not precise enough for users switching between Cloud and internal Jira.
+10. Team-default onboarding should assume `avjira` + `server_dc` + `basic` so most users do not need to make deployment or auth decisions manually.
+12. When the standard Jira issue JSON and the guessed Synapse REST paths are both insufficient, the Jira browse-page HTML is the next local source of truth because it already renders the test-step grid and may reveal plugin-backed endpoints or embedded step data.
+11. PowerShell `>` redirection can create UTF-16 files, which is readable but awkward for downstream machine processing unless the CLI later provides explicit UTF-8 file output.
 
 ### Resolved in Phase 1
 
 1. Added a root-level launcher so the CLI can be exercised locally before editable installation.
 2. Removed `dataclass(slots=True)` usage after the local interpreter rejected it during launcher execution.
+3. Added first-run interactive config capture that writes a local `.env` file and retries the original fetch command.
+4. Split password and token handling in onboarding so internal Jira basic auth can use a real password while Cloud and bearer flows keep using tokens.
+5. Added a field-discovery slice so the harness can inspect all Jira field metadata on a real issue instead of guessing where Synapse-style test steps, requirement panels, attachments, or test plans are stored.
+7. Added an issue-page inspection slice so the harness can inspect rendered Jira HTML for step-grid markup and embedded Synapse endpoint clues.
+6. Added a Synapse probe slice so the harness can test plugin-backed TestRay endpoints when the structured step grid is not present in the standard Jira issue response.
+
+### Active Phase 1 risk
+
+1. The raw issue fetch proves baseline access, but the current default whitelist does not yet expose all of the UI sections the user relies on, such as step tables, requirement panels, attachments, test plans, and Synapse-specific metadata.
+2. Before widening into requirement crawling or attachment parsing, discover and confirm the exact Jira fields that back those UI sections on real MFD test case issues.
 
 ### Add future gotchas here
 
@@ -134,7 +151,7 @@ Retrieve one Jira test case issue by key and expose it consistently through the 
 
 ### Phase-1 API defaults
 
-1. Endpoint: `GET /rest/api/3/issue/{issueIdOrKey}`
+1. Endpoint: start with the host-appropriate issue endpoint, typically `GET /rest/api/3/issue/{issueIdOrKey}` for Cloud and `GET /rest/api/2/issue/{issueIdOrKey}` for internal Jira Server/Data Center hosts
 2. Auth: basic auth with email and API token
 3. Default field strategy: explicit field whitelist
 4. Default expand strategy: none unless required by the issue type

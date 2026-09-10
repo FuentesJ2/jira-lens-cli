@@ -7,7 +7,7 @@ name = "jira-context-harness"
 version = "0.1.0"
 description = "Local CLI and MCP harness for JIRA context retrieval"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = []
 
 [project.scripts]

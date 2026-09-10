@@ -8,7 +8,13 @@ from unittest.mock import patch
 
 from jira_context_harness.cli import build_parser, main, render_fetch_output
 from jira_context_harness.config import JiraSettings
+from jira_context_harness.jira_client import JiraAuthProbeAttempt
 from jira_context_harness.models import JiraFetchResult, JiraIssueContext
+
+
+class _InteractiveInput(io.StringIO):
+    def isatty(self) -> bool:
+        return True
 
 
 class BuildParserTests(unittest.TestCase):
@@ -36,11 +42,65 @@ class BuildParserTests(unittest.TestCase):
 
         self.assertEqual(args.view, "raw")
 
+    def test_fetch_accepts_section(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([
+            "fetch",
+            "test-case",
+            "MFD-1234",
+            "--section",
+            "ad-hoc-runs",
+        ])
+
+        self.assertEqual(args.section, "ad-hoc-runs")
+
     def test_serve_mcp_is_registered(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["serve-mcp"])
 
         self.assertEqual(args.command, "serve-mcp")
+
+    def test_configure_is_registered(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["configure"])
+
+        self.assertEqual(args.command, "configure")
+
+    def test_configure_advanced_is_registered(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["configure", "--advanced"])
+
+        self.assertEqual(args.command, "configure")
+        self.assertTrue(args.advanced)
+
+    def test_probe_auth_is_registered(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["probe-auth"])
+
+        self.assertEqual(args.command, "probe-auth")
+
+    def test_discover_fields_is_registered(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["discover-fields", "MFD-7754", "--include-raw"])
+
+        self.assertEqual(args.command, "discover-fields")
+        self.assertEqual(args.issue_key, "MFD-7754")
+        self.assertTrue(args.include_raw)
+
+    def test_probe_synapse_is_registered(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["probe-synapse", "MFD-7754"])
+
+        self.assertEqual(args.command, "probe-synapse")
+        self.assertEqual(args.issue_key, "MFD-7754")
+
+    def test_inspect_page_is_registered(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["inspect-page", "MFD-7754", "--include-html"])
+
+        self.assertEqual(args.command, "inspect-page")
+        self.assertEqual(args.issue_key, "MFD-7754")
+        self.assertTrue(args.include_html)
 
 
 class CliOutputTests(unittest.TestCase):
@@ -62,9 +122,42 @@ class CliOutputTests(unittest.TestCase):
             raw_response={"key": "MFD-1234", "fields": {"summary": "Summary"}},
         )
 
-        output = render_fetch_output(result=result, output_format="json", view="raw")
+        output = render_fetch_output(result=result, output_format="json", view="raw", section="full")
 
         self.assertIn('"key": "MFD-1234"', output)
+
+    def test_render_fetch_output_supports_section_both(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-1234",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://example.atlassian.net/browse/MFD-1234",
+                test_management={
+                    "ad_hoc_test_runs": [{"test_run_id": 1, "status": "Failed"}],
+                },
+            ),
+            raw_response={"key": "MFD-1234"},
+            supplemental_responses={"ad_hoc_test_runs": [{"ID": 1, "status": "Failed"}]},
+        )
+
+        output = render_fetch_output(
+            result=result,
+            output_format="json",
+            view="both",
+            section="ad-hoc-runs",
+        )
+
+        self.assertIn('"normalized": [', output)
+        self.assertIn('"raw_response": [', output)
+        self.assertIn('"test_run_id": 1', output)
 
     def test_main_emits_json_for_fetch(self) -> None:
         result = JiraFetchResult(
@@ -88,6 +181,7 @@ class CliOutputTests(unittest.TestCase):
             load_settings_mock.return_value = JiraSettings(
                 base_url="https://example.atlassian.net",
                 user_email="user@example.com",
+                password="",
                 api_token="token",
                 project_scope="MFD",
             )
@@ -100,6 +194,257 @@ class CliOutputTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn('"issue_key": "MFD-1234"', stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_main_prompts_for_missing_config_and_retries_fetch(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-7754",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://example.atlassian.net/browse/MFD-7754",
+            ),
+            raw_response={"key": "MFD-7754"},
+        )
+
+        interactive_input = _InteractiveInput("https://example.atlassian.net\nuser@example.com\nMFD\n")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="",
+                user_email="",
+                password="",
+                api_token="",
+                project_scope="MFD",
+                deployment="server_dc",
+                auth_mode="basic",
+            )
+            with patch("jira_context_harness.cli.save_settings") as save_settings_mock:
+                with patch("jira_context_harness.cli.getpass.getpass", return_value="token"):
+                    with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                        jira_client_mock.return_value.fetch_issue.return_value = result
+                        with patch("sys.stdin", interactive_input), patch(
+                            "sys.stdout", stdout
+                        ), patch("sys.stderr", stderr):
+                            exit_code = main(["fetch", "test-case", "MFD-7754"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"issue_key": "MFD-7754"', stdout.getvalue())
+        self.assertIn("Starting first-run setup", stderr.getvalue())
+        saved_settings = save_settings_mock.call_args.args[0]
+        self.assertEqual(saved_settings.base_url, "https://example.atlassian.net")
+        self.assertEqual(saved_settings.user_email, "user@example.com")
+        self.assertEqual(saved_settings.password, "")
+        self.assertEqual(saved_settings.api_token, "token")
+        self.assertEqual(saved_settings.deployment, "server_dc")
+        self.assertEqual(saved_settings.auth_mode, "basic")
+
+    def test_configure_updates_saved_settings(self) -> None:
+        interactive_input = _InteractiveInput("https://avjira\njulio.fuentes@virgingalactic.com\nMFD\n")
+        stderr = io.StringIO()
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://virgingalactic.atlassian.net",
+                user_email="julio.fuentes@virgingalactic.com",
+                password="",
+                api_token="saved-token",
+                project_scope="MFD",
+                deployment="auto",
+                auth_mode="auto",
+            )
+            with patch("jira_context_harness.cli.save_settings") as save_settings_mock:
+                with patch("jira_context_harness.cli.getpass.getpass", return_value="jira-password"):
+                    with patch("sys.stdin", interactive_input), patch("sys.stderr", stderr):
+                        exit_code = main(["configure"])
+
+        self.assertEqual(exit_code, 0)
+        saved_settings = save_settings_mock.call_args.args[0]
+        self.assertEqual(saved_settings.base_url, "https://avjira")
+        self.assertEqual(saved_settings.deployment, "server_dc")
+        self.assertEqual(saved_settings.auth_mode, "basic")
+        self.assertEqual(saved_settings.password, "jira-password")
+        self.assertEqual(saved_settings.api_token, "")
+
+    def test_configure_advanced_updates_overrides(self) -> None:
+        interactive_input = _InteractiveInput(
+            "https://example.atlassian.net\nuser@example.com\nMFD\ncloud\nbasic\n"
+        )
+        stderr = io.StringIO()
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://avjira",
+                user_email="FuentesJ2",
+                password="saved-password",
+                api_token="",
+                project_scope="MFD",
+                deployment="server_dc",
+                auth_mode="basic",
+            )
+            with patch("jira_context_harness.cli.save_settings") as save_settings_mock:
+                with patch("jira_context_harness.cli.getpass.getpass", return_value="cloud-token"):
+                    with patch("sys.stdin", interactive_input), patch("sys.stderr", stderr):
+                        exit_code = main(["configure", "--advanced"])
+
+        self.assertEqual(exit_code, 0)
+        saved_settings = save_settings_mock.call_args.args[0]
+        self.assertEqual(saved_settings.deployment, "cloud")
+        self.assertEqual(saved_settings.auth_mode, "basic")
+        self.assertEqual(saved_settings.password, "")
+        self.assertEqual(saved_settings.api_token, "cloud-token")
+
+    def test_main_skips_prompt_when_disabled(self) -> None:
+        stderr = io.StringIO()
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="",
+                user_email="",
+                password="",
+                api_token="",
+                project_scope="MFD",
+            )
+            with patch("sys.stderr", stderr):
+                exit_code = main(["fetch", "test-case", "MFD-7754", "--no-config-prompt"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Missing required Jira settings", stderr.getvalue())
+
+    def test_main_emits_ad_hoc_section_for_fetch(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-7754",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test Case",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://avjira/browse/MFD-7754",
+                test_management={
+                    "ad_hoc_test_runs": [{"test_run_id": 10721, "status": "Failed"}],
+                },
+            ),
+            raw_response={"key": "MFD-7754"},
+            supplemental_responses={"ad_hoc_test_runs": [{"ID": 10721, "status": "Failed"}]},
+        )
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://avjira",
+                user_email="FuentesJ2",
+                password="password",
+                api_token="",
+                project_scope="MFD",
+                deployment="server_dc",
+                auth_mode="basic",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.fetch_issue.return_value = result
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                    exit_code = main([
+                        "fetch",
+                        "test-case",
+                        "MFD-7754",
+                        "--section",
+                        "ad-hoc-runs",
+                    ])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"test_run_id": 10721', stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_main_emits_field_discovery_report(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://avjira",
+                user_email="FuentesJ2",
+                password="password",
+                api_token="",
+                project_scope="MFD",
+                deployment="server_dc",
+                auth_mode="basic",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.discover_issue_fields.return_value.to_dict.return_value = {
+                    "report": {"issue_key": "MFD-7754", "interesting_field_count": 3}
+                }
+                with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                    exit_code = main(["discover-fields", "MFD-7754"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"issue_key": "MFD-7754"', stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_main_emits_synapse_probe_report(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://avjira",
+                user_email="FuentesJ2",
+                password="password",
+                api_token="",
+                project_scope="MFD",
+                deployment="server_dc",
+                auth_mode="basic",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.probe_synapse_test_case.return_value = [
+                    JiraAuthProbeAttempt(
+                        api_path="https://avjira/rest/synapse/latest/public/testCase/MFD-7754/steps",
+                        auth_mode="basic",
+                        ok=True,
+                        status_code=200,
+                        detail="ok",
+                        payload={"steps": [{"id": 1}]},
+                    )
+                ]
+                with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                    exit_code = main(["probe-synapse", "MFD-7754"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("synapse/latest/public", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_main_emits_issue_page_inspection_report(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://avjira",
+                user_email="FuentesJ2",
+                password="password",
+                api_token="",
+                project_scope="MFD",
+                deployment="server_dc",
+                auth_mode="basic",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.inspect_issue_page.return_value.to_dict.return_value = {
+                    "issue_key": "MFD-7754",
+                    "clue_count": 2,
+                }
+                with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                    exit_code = main(["inspect-page", "MFD-7754"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"issue_key": "MFD-7754"', stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
 
 
