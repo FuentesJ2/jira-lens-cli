@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from importlib import import_module
+from typing import Any, Optional, Sequence
 
 from jira_context_harness.cli import _default_fields_for, _render_fetch_payload
 from jira_context_harness.config import load_settings
@@ -43,10 +44,11 @@ def fetch_issue_tool_payload(
 
 def build_server() -> Any:
     try:
-        from mcp.server.fastmcp import FastMCP
+        fastmcp_module = import_module("mcp.server.fastmcp")
+        FastMCP = fastmcp_module.FastMCP
     except ImportError as exc:
         raise RuntimeError(
-            "The MCP Python dependency is not installed. Install the project dependencies and rerun `python run_cli.py serve-mcp`."
+            "The MCP Python dependency is unavailable in this interpreter. The current MCP server implementation requires Python 3.10+ with the project dependencies installed."
         ) from exc
 
     server = FastMCP("jira-context-harness")
@@ -80,7 +82,7 @@ def build_server() -> Any:
     return server
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
     del argv
     server = build_server()
     server.run(transport="stdio")

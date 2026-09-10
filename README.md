@@ -116,6 +116,8 @@ If you want the `jira-context` command to exist directly in PowerShell, install 
 python -m pip install -e .
 ```
 
+The current MCP server implementation depends on the official `mcp` package and therefore needs a Python version that satisfies that package's published requirements.
+
 Then this form will work:
 
 ```text

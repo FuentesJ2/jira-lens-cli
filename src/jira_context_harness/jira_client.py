@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import html as html_lib
 import json
 import re
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence
 from urllib import error, parse, request
 
 from jira_context_harness.config import JiraSettings
@@ -37,7 +37,7 @@ class JiraConfigurationError(JiraHarnessError):
 class JiraClientError(JiraHarnessError):
     """Raised when the Jira API request fails or returns invalid data."""
 
-    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+    def __init__(self, message: str, *, status_code: Optional[int] = None) -> None:
         super().__init__(message)
         self.status_code = status_code
 
@@ -46,9 +46,9 @@ class JiraClientError(JiraHarnessError):
 class FetchRequest:
     issue_kind: str
     issue_key: str
-    fields: Sequence[str] | None = None
-    expand: Sequence[str] | None = None
-    properties: Sequence[str] | None = None
+    fields: Optional[Sequence[str]] = None
+    expand: Optional[Sequence[str]] = None
+    properties: Optional[Sequence[str]] = None
     fields_by_keys: bool = False
     fail_fast: bool = True
 
@@ -58,10 +58,10 @@ class JiraAuthProbeAttempt:
     api_path: str
     auth_mode: str
     ok: bool
-    status_code: int | None = None
+    status_code: Optional[int] = None
     detail: str = ""
-    response_headers: dict[str, str] | None = None
-    payload: dict[str, Any] | None = None
+    response_headers: Optional[Dict[str, str]] = None
+    payload: Optional[Dict[str, Any]] = None
 
 
 class JiraClient:
@@ -379,7 +379,7 @@ class JiraClient:
 
     def _perform_issue_get(self, request_model: FetchRequest) -> dict[str, Any]:
         errors: list[str] = []
-        last_status_code: int | None = None
+        last_status_code: Optional[int] = None
 
         for url, auth_mode, api_path in self._iter_request_candidates(request_model):
             api_request = request.Request(
@@ -789,7 +789,7 @@ def _normalize_test_management_payload(key: str, payload: Any) -> Any:
     return payload
 
 
-def _normalize_test_step(step: dict[str, Any], *, fallback_sequence_number: int | None = None) -> dict[str, Any]:
+def _normalize_test_step(step: dict[str, Any], *, fallback_sequence_number: Optional[int] = None) -> dict[str, Any]:
     embedded_step = _embedded_test_run_step(step)
     step_raw = _first_non_html_value(step.get("stepRaw"), embedded_step.get("stepRaw"), step.get("step"), embedded_step.get("step"))
     expected_result_raw = _first_non_html_value(
@@ -871,9 +871,9 @@ def _build_merged_steps(test_management: dict[str, Any]) -> list[dict[str, Any]]
 
 
 def _merge_step_versions(
-    authored_step: dict[str, Any] | None,
-    latest_run_step: dict[str, Any] | None,
-    latest_run: dict[str, Any] | None,
+    authored_step: Optional[dict[str, Any]],
+    latest_run_step: Optional[dict[str, Any]],
+    latest_run: Optional[dict[str, Any]],
 ) -> dict[str, Any]:
     authored_step = authored_step or {}
     latest_run_step = latest_run_step or {}

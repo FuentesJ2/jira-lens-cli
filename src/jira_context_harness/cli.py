@@ -437,7 +437,7 @@ def _prompt_auth_secret_values(
     return password, api_token
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
