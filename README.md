@@ -172,6 +172,21 @@ python run_cli.py fetch test-case MFD-7754 --section merged-steps
 
 The `merged-steps` section keeps the authored test-case step text as the primary source, then overlays the latest ad hoc run status, actual result, attachments, and richer rendered HTML when it is available from the execution record.
 
+To start the MCP server for agent use:
+
+```text
+python run_cli.py serve-mcp
+```
+
+The initial MCP tool surface is:
+
+```text
+get_test_case(issue_key, section="full", include_raw=false)
+get_requirement(issue_key, include_raw=false)
+```
+
+For `get_test_case`, the `section` values match the CLI fetch sections, including `authored-steps`, `ad-hoc-runs`, and `merged-steps`.
+
 Render a quick human-readable summary:
 
 ```text

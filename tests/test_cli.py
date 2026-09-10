@@ -447,6 +447,13 @@ class CliOutputTests(unittest.TestCase):
         self.assertIn('"issue_key": "MFD-7754"', stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
 
+    def test_main_dispatches_serve_mcp(self) -> None:
+        with patch("jira_context_harness.mcp_server.main", return_value=0) as mcp_main_mock:
+            exit_code = main(["serve-mcp"])
+
+        self.assertEqual(exit_code, 0)
+        mcp_main_mock.assert_called_once_with()
+
 
 class LauncherSupportTests(unittest.TestCase):
     def test_cli_main_imports_from_package_surface(self) -> None:

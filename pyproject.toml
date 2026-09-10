@@ -8,10 +8,11 @@ version = "0.1.0"
 description = "Local CLI and MCP harness for JIRA context retrieval"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["mcp>=1.0.0"]
 
 [project.scripts]
 jira-context = "jira_context_harness.cli:main"
+jira-context-mcp = "jira_context_harness.mcp_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

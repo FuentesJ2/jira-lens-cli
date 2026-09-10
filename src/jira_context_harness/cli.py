@@ -561,8 +561,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "serve-mcp":
-        print("serve-mcp is scaffolded but not implemented yet", file=sys.stderr)
-        return 2
+        from jira_context_harness.mcp_server import main as mcp_server_main
+
+        return mcp_server_main()
 
     parser.error("Unknown command")
     return 2
