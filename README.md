@@ -31,13 +31,40 @@ The portable deployment shape is the one you want when the tool should stay in t
 
 ## Current status
 
-Phase 1 is in progress.
+The CLI is now functional end to end for the core workflow. Current capabilities:
 
-The CLI can now fetch a single Jira issue against either Jira Cloud or an internal Jira Server/Data Center-style host by trying the appropriate issue endpoint variants. The workspace skill at `.github/skills/jira-context-cli/` is the active Copilot integration path for this pure-CLI workflow.
+1. Fetch a single Jira issue for `test-case`, `requirement`, and `problem-report`.
+2. Normalize Jira and Synapse or TestRay responses into smaller agent-friendly JSON.
+3. Save normalized JSON and optional raw payload JSON in `jira-output/`.
+4. Support focused fetch sections such as `links`, `comments`, `authored-steps`, `ad-hoc-runs`, and `test-management`.
+5. Prompt for missing Jira settings on first use, save them locally, and retry the fetch automatically.
+6. Deploy as a portable workspace bundle under `.github/tools/jira-context/` plus the Copilot skill under `.github/skills/jira-context-cli/`.
+
+The workspace skill at `.github/skills/jira-context-cli/` is the active Copilot integration path for this pure-CLI workflow. In the surrounding `Dev-Sidecar` workspace, the workspace-root `.github/copilot-instructions.md` can provide repo-aware Copilot context without placing that file inside the simulated deployment tree in this repository.
+
+When this harness is used alongside Tessie or other MFD test-generation workflows, live Jira data should be fetched with this CLI first and repository CSVs should be treated as secondary references unless the user explicitly wants an offline workflow.
 
 The currently known browser issue URL for this workflow is `https://avjira/browse/MFD-7754`. If that is the authoritative Jira host, the harness may need to target Jira Server or Data Center REST endpoints instead of Jira Cloud v3.
 
-## Phase 1 CLI usage
+## Quick start for teammates
+
+If you are already at a workspace root, install the latest release with:
+
+```powershell
+Invoke-WebRequest -OutFile install-jira-context.ps1 https://github.com/FuentesJ2/jira-lens-cli/raw/main/install-jira-context.ps1; .\install-jira-context.ps1
+```
+
+The installer works even if the workspace does not have a `.github` folder yet; it will create the managed `.github`, `.github/skills`, and `.github/tools` folders.
+
+Then run a first fetch:
+
+```powershell
+.\.github\tools\jira-context\jira-context.exe fetch requirement DMFDREQ-1448
+```
+
+If Jira settings are missing, the CLI will prompt once, save them locally, and retry the fetch automatically.
+
+## CLI usage
 
 Set environment variables:
 
@@ -228,14 +255,13 @@ What it does:
 Recommended usage from a teammate workspace root:
 
 ```powershell
-Invoke-WebRequest -OutFile install-jira-context.ps1 https://github.com/FuentesJ2/jira-lens-cli/raw/main/install-jira-context.ps1
-.\install-jira-context.ps1
+Invoke-WebRequest -OutFile install-jira-context.ps1 https://github.com/FuentesJ2/jira-lens-cli/raw/main/install-jira-context.ps1; .\install-jira-context.ps1
 ```
 
 Install a specific release instead of the latest one:
 
 ```powershell
-.\install-jira-context.ps1 -Version v0.1.0
+Invoke-WebRequest -OutFile install-jira-context.ps1 https://github.com/FuentesJ2/jira-lens-cli/raw/v0.1.2/install-jira-context.ps1; .\install-jira-context.ps1 -Version v0.1.2
 ```
 
 Target a specific workspace explicitly:
@@ -342,7 +368,7 @@ If you want to fetch a linked problem report directly, use the dedicated issue k
 
 The active workspace skill lives under the deployed workspace `.github/skills/jira-context-cli/` folder.
 This repository also keeps a mirror copy at `.github/skills/jira-context-cli/` so skill revisions can stay with the harness.
-Until the workflow is finalized, keep both copies synchronized when the skill changes.
+For the surrounding `Dev-Sidecar` workspace, prefer a workspace-root `.github/copilot-instructions.md` so Copilot context is provided by the live workspace rather than by the simulated deployment tree inside this source repository.
 
 Render a quick human-readable summary:
 
