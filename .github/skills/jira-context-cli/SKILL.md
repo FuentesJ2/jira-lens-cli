@@ -74,12 +74,54 @@ Use the exact command patterns in [commands reference](./references/commands.md)
 
 ## Answer Shape
 - Prefer normalized output for summaries.
-- Present data in markdown tables when the fields fit cleanly into rows and columns.
+- Default to markdown tables whenever two or more comparable fields can be lined up cleanly.
+- Prefer tables over bullets for snapshots, requirement lists, linked issues, run history, step counts, statuses, owners, and other structured Jira/TestRay data.
 - For a test-case rundown, prefer this order: Snapshot, Current Requirements, Test Intent, Execution Signals, Related Issues, Comments Worth Reading, Next Query Layers.
+- Keep headings short and deliberate.
+- After an important table, add a short interpretation paragraph when there is a meaningful signal or mismatch to call out.
 - If the user asked for a pure section such as `comments` or `ad-hoc-runs`, summarize only that section unless they ask for more.
 - If the CLI reports missing config or auth, tell the user exactly which saved Jira setting is missing.
 - Do not claim that `comments` includes Jira field-change history or every workflow action; changelog data is not normalized yet.
 - Keep each section tight. If a section has nothing useful, say `None found`.
+
+Preferred compact shape:
+
+```markdown
+**Snapshot**
+| Key | Type | Status | Assignee | Summary |
+| --- | --- | --- | --- | --- |
+| MFD-7754 | Test Case | Draft | Julio Fuentes Jr (Contractor) | DELTA - DIAG XPDR Reported Parameter Callsign Test Case |
+
+**Current Requirements**
+| Requirement | Status | What It Says Now | Why It Matters |
+| --- | --- | --- | --- |
+| DMFDREQ-1448 | Requirement Validated | Callsign may display up to 8 ASCII chars with out-of-range handling defined | The linked test case may be stale against the current requirement wording |
+
+The biggest signal is whether the current requirement and current test-case expectations still match.
+
+**Test Intent**
+| Objective | Authored Steps |
+| --- | --- |
+| Show that the DIAG XPDR page correctly displays the Callsign after setting Flight ID bytes. | 8 |
+
+**Execution Signals**
+| Latest Run | Status | Notable Result | Evidence |
+| --- | --- | --- | --- |
+| None found | None found | None found | None found |
+
+**Related Issues**
+| Issue | Relationship | Status | Summary |
+| --- | --- | --- | --- |
+| None found | None found | None found | None found |
+
+**Comments Worth Reading**
+- 2024-02-15 | Example Author: short reason this comment matters.
+
+**Next Query Layers**
+| Next Node | Why Query It |
+| --- | --- |
+| DMFDREQ-1448 | Check related issues or lineage if the current expectation looks stale. |
+```
 
 ## References
 - Use [commands reference](./references/commands.md) for normal day-to-day fetch commands and advanced fetch flag explanations.
