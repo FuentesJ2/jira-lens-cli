@@ -26,6 +26,7 @@ from jira_context_harness.jira_client import (
     JiraClient,
     JiraClientError,
     JiraConfigurationError,
+    SearchRequest,
 )
 from jira_context_harness.runtime_paths import raw_payload_artifact_dir
 
@@ -42,6 +43,16 @@ DEFAULT_TEST_CASE_FIELDS = [
     "issuelinks",
 ]
 
+DEFAULT_SEARCH_FIELDS = [
+    "summary",
+    "status",
+    "issuetype",
+    "project",
+    "assignee",
+    "reporter",
+    "updated",
+]
+
 RAW_PAYLOAD_ARTIFACT_DIR = raw_payload_artifact_dir()
 VALID_FETCH_VIEWS = {"normalized", "raw", "combined"}
 LEGACY_FETCH_VIEW_ALIASES = {"both": "combined"}
@@ -51,6 +62,10 @@ def _default_fields_for(issue_kind: str) -> list[str]:
     if issue_kind == "test-case":
         return list(DEFAULT_TEST_CASE_FIELDS)
     return list(DEFAULT_TEST_CASE_FIELDS)
+
+
+def _default_search_fields() -> list[str]:
+    return list(DEFAULT_SEARCH_FIELDS)
 
 
 def _parse_fetch_view(value: str) -> str:
@@ -168,6 +183,50 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not prompt to create local Jira config when required settings are missing.",
     )
 
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Run a JQL search and save a normalized issue list for downstream analysis.",
+    )
+    search_parser.add_argument(
+        "--jql",
+        required=True,
+        help="JQL expression to execute.",
+    )
+    search_parser.add_argument(
+        "--save-normalized-to",
+        required=True,
+        help="File path to save the normalized search output to disk. Search does not emit normalized stdout output.",
+    )
+    search_parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum number of issues to return.",
+    )
+    search_parser.add_argument(
+        "--start-at",
+        type=int,
+        default=0,
+        help="Starting offset for a paged Jira search result set.",
+    )
+    search_parser.add_argument(
+        "--field",
+        action="append",
+        dest="fields",
+        default=None,
+        help="Additional Jira search field to request. Can be passed multiple times.",
+    )
+    search_parser.add_argument(
+        "--fields-by-keys",
+        action="store_true",
+        help="Request custom fields by key when supported by the Jira site.",
+    )
+    search_parser.add_argument(
+        "--no-config-prompt",
+        action="store_true",
+        help="Do not prompt to create local Jira config when required settings are missing.",
+    )
+
     configure_parser = subparsers.add_parser(
         "configure",
         help="Create or update the local Jira config used by the CLI.",
@@ -244,6 +303,10 @@ def render_fetch_output(
 
     payload = _render_fetch_payload(result=result, view=view, section=section)
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def render_search_output(*, result: object) -> str:
+    return json.dumps(result.to_dict(), indent=2, sort_keys=True) + "\n"
 
 
 def _render_fetch_payload(*, result: object, view: str, section: str) -> object:
@@ -523,6 +586,35 @@ def _prompt_auth_secret_values(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "search":
+        if args.limit < 1:
+            parser.error("--limit must be at least 1")
+        if args.start_at < 0:
+            parser.error("--start-at must be 0 or greater")
+
+        request_model = SearchRequest(
+            jql=args.jql,
+            fields=_default_search_fields() + (args.fields or []),
+            start_at=args.start_at,
+            max_results=args.limit,
+            fields_by_keys=args.fields_by_keys,
+        )
+        try:
+            settings = _resolve_settings(
+                allow_prompt=not args.no_config_prompt,
+                input_stream=sys.stdin,
+                error_stream=sys.stderr,
+            )
+            client = JiraClient(settings)
+            result = client.search_issues(request_model)
+        except (JiraConfigurationError, JiraClientError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        normalized_path = _write_json_file(Path(args.save_normalized_to), result.to_dict())
+        print(f"Saved normalized output to {normalized_path}", file=sys.stderr)
+        return 0
 
     if args.command == "fetch":
         legacy_combined_requested = args.view == "combined"

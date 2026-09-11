@@ -9,7 +9,7 @@ import unittest
 from jira_context_harness.config import JiraSettings
 from urllib import error
 
-from jira_context_harness.jira_client import FetchRequest, JiraClient, JiraConfigurationError
+from jira_context_harness.jira_client import FetchRequest, JiraClient, JiraClientError, JiraConfigurationError, SearchRequest
 
 
 class _FakeResponse:
@@ -44,6 +44,125 @@ class _FakeHttpError(error.HTTPError):
 
 
 class JiraClientTests(unittest.TestCase):
+    def test_search_issues_requires_settings(self) -> None:
+        client = JiraClient(
+            JiraSettings(base_url="", user_email="", password="", api_token="", project_scope="MFD")
+        )
+
+        with self.assertRaises(JiraConfigurationError):
+            client.search_issues(SearchRequest(jql='assignee = "Dustin Marek" ORDER BY updated DESC'))
+
+    def test_search_issues_posts_jql_and_normalizes_results(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_urlopen(req, timeout):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            captured["authorization"] = req.get_header("Authorization")
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            captured["timeout"] = timeout
+            return _FakeResponse(
+                {
+                    "startAt": 0,
+                    "maxResults": 10,
+                    "total": 2,
+                    "issues": [
+                        {
+                            "key": "MFD-9212",
+                            "fields": {
+                                "summary": "Summary one",
+                                "status": {"name": "In Progress"},
+                                "issuetype": {"name": "Problem Report"},
+                                "project": {"key": "MFD"},
+                                "assignee": {"displayName": "Dustin Marek"},
+                                "reporter": {"displayName": "Delta User"},
+                                "updated": "2026-09-11T12:34:56.000+0000",
+                            },
+                        },
+                        {
+                            "key": "MFD-9211",
+                            "fields": {
+                                "summary": "Summary two",
+                                "status": {"name": "Done"},
+                                "issuetype": {"name": "Task"},
+                                "project": {"key": "MFD"},
+                                "assignee": {"displayName": "Dustin Marek"},
+                                "reporter": {"displayName": "Another User"},
+                                "updated": "2026-09-10T11:22:33.000+0000",
+                            },
+                        },
+                    ],
+                }
+            )
+
+        client = JiraClient(
+            JiraSettings(
+                base_url="https://avjira",
+                user_email="julio.fuentes@virgingalactic.com",
+                password="password",
+                api_token="",
+                project_scope="MFD",
+            ),
+            urlopen=fake_urlopen,
+        )
+
+        result = client.search_issues(
+            SearchRequest(
+                jql='assignee = "Dustin Marek" ORDER BY updated DESC',
+                fields=["summary", "status", "issuetype", "project", "assignee", "reporter", "updated"],
+                start_at=0,
+                max_results=10,
+            )
+        )
+
+        self.assertEqual(result.query, 'assignee = "Dustin Marek" ORDER BY updated DESC')
+        self.assertEqual(result.mode, "raw-jql")
+        self.assertEqual(result.total, 2)
+        self.assertEqual(result.returned, 2)
+        self.assertEqual(result.issues[0].issue_key, "MFD-9212")
+        self.assertEqual(result.issues[0].reporter, "Delta User")
+        self.assertEqual(result.issues[1].status, "Done")
+        self.assertEqual(captured["method"], "POST")
+        self.assertIn("/rest/api/2/search", str(captured["url"]))
+        self.assertEqual(captured["timeout"], 30)
+        self.assertTrue(str(captured["authorization"]).startswith("Basic "))
+        self.assertEqual(
+            captured["body"],
+            {
+                "jql": 'assignee = "Dustin Marek" ORDER BY updated DESC',
+                "startAt": 0,
+                "maxResults": 10,
+                "fields": ["summary", "status", "issuetype", "project", "assignee", "reporter", "updated"],
+            },
+        )
+
+    def test_search_issues_surfaces_http_400(self) -> None:
+        def fake_urlopen(req, timeout):
+            raise _FakeHttpError(
+                req.full_url,
+                400,
+                "Bad Request",
+                {},
+                '{"errorMessages": ["The value \"Dustin Marek\" does not exist for the field \"assignee\"."]}',
+            )
+
+        client = JiraClient(
+            JiraSettings(
+                base_url="https://avjira",
+                user_email="julio.fuentes@virgingalactic.com",
+                password="password",
+                api_token="",
+                project_scope="MFD",
+            ),
+            urlopen=fake_urlopen,
+        )
+
+        with self.assertRaises(JiraClientError) as error_context:
+            client.search_issues(SearchRequest(jql='assignee = "Dustin Marek" ORDER BY updated DESC'))
+
+        self.assertIn("HTTP 400", str(error_context.exception))
+        self.assertIn("assignee", str(error_context.exception))
+
     def test_fetch_issue_requires_settings(self) -> None:
         client = JiraClient(
             JiraSettings(base_url="", user_email="", password="", api_token="", project_scope="MFD")

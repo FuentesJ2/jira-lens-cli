@@ -71,6 +71,44 @@ class JiraFetchResult:
 
 
 @dataclass
+class JiraSearchIssue:
+    issue_key: str
+    summary: str
+    status: str
+    issue_type: str
+    project_key: str
+    assignee: str
+    reporter: str
+    updated: str
+    source_url: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class JiraSearchResult:
+    query: str
+    mode: str
+    total: int
+    returned: int
+    start_at: int
+    max_results: int
+    issues: list[JiraSearchIssue] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "mode": self.mode,
+            "total": self.total,
+            "returned": self.returned,
+            "start_at": self.start_at,
+            "max_results": self.max_results,
+            "issues": [issue.to_dict() for issue in self.issues],
+        }
+
+
+@dataclass
 class JiraFieldDiscoveryEntry:
     field_id: str
     field_name: str

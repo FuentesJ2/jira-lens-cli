@@ -17,6 +17,8 @@ from jira_context_harness.models import (
     JiraFieldDiscoveryEntry,
     JiraFieldDiscoveryReport,
     JiraFieldDiscoveryResult,
+    JiraSearchIssue,
+    JiraSearchResult,
     JiraIssueContext,
     JiraLink,
     JiraHtmlClue,
@@ -52,6 +54,15 @@ class FetchRequest:
     properties: Optional[Sequence[str]] = None
     fields_by_keys: bool = False
     fail_fast: bool = True
+
+
+@dataclass
+class SearchRequest:
+    jql: str
+    fields: Optional[Sequence[str]] = None
+    start_at: int = 0
+    max_results: int = 10
+    fields_by_keys: bool = False
 
 
 @dataclass
@@ -97,6 +108,16 @@ class JiraClient:
             raw_response=response_payload,
             supplemental_responses=supplemental_responses,
         )
+
+    def search_issues(self, request_model: SearchRequest) -> JiraSearchResult:
+        missing = self._settings.missing_required()
+        if missing:
+            raise JiraConfigurationError(
+                "Missing required Jira settings: " + ", ".join(missing)
+            )
+
+        response_payload = _sanitize_payload(self._perform_search(request_model))
+        return self._normalize_search_results(response_payload, request_model)
 
     def probe_auth(self) -> list[JiraAuthProbeAttempt]:
         missing = self._settings.missing_required()
@@ -417,6 +438,52 @@ class JiraClient:
             )
         raise JiraClientError("Jira API request failed before any request candidates were built")
 
+    def _perform_search(self, request_model: SearchRequest) -> dict[str, Any]:
+        errors: list[str] = []
+        last_status_code: Optional[int] = None
+        base_url = self._settings.base_url.rstrip("/")
+        request_body = self._search_request_body(request_model)
+
+        for api_path in _candidate_api_paths(self._settings):
+            url = f"{base_url}{api_path}/search"
+            for auth_mode in _candidate_auth_modes(self._settings):
+                api_request = request.Request(
+                    url,
+                    data=request_body,
+                    headers={
+                        "Accept": "application/json",
+                        "Authorization": self._build_authorization_header(auth_mode),
+                        "Content-Type": "application/json",
+                        "User-Agent": "jira-context-harness/0.1.0",
+                    },
+                    method="POST",
+                )
+
+                try:
+                    with self._urlopen(api_request, timeout=self._timeout_seconds) as response:
+                        payload = json.load(response)
+                except error.HTTPError as exc:
+                    detail, _response_headers = self._extract_http_error_detail(exc)
+                    last_status_code = exc.code
+                    errors.append(f"{api_path} with {auth_mode} auth -> HTTP {exc.code}: {detail}")
+                    continue
+                except error.URLError as exc:
+                    raise JiraClientError(f"Jira search request failed: {exc.reason}") from exc
+                except json.JSONDecodeError as exc:
+                    raise JiraClientError("Jira search API returned invalid JSON") from exc
+
+                if not isinstance(payload, dict):
+                    raise JiraClientError("Jira search API returned a non-object JSON payload")
+                return payload
+
+        if errors:
+            raise JiraClientError(
+                "Jira search request failed after trying multiple Jira API variants: "
+                + " | ".join(errors),
+                status_code=last_status_code,
+            )
+        raise JiraClientError("Jira search request failed before any request candidates were built")
+
     def _perform_json_get(self, url: str) -> Any:
         api_request = request.Request(
             url,
@@ -473,6 +540,18 @@ class JiraClient:
             query_params["failFast"] = "false"
         return query_params
 
+    def _search_request_body(self, request_model: SearchRequest) -> bytes:
+        payload: dict[str, Any] = {
+            "jql": request_model.jql,
+            "startAt": request_model.start_at,
+            "maxResults": request_model.max_results,
+        }
+        if request_model.fields:
+            payload["fields"] = list(request_model.fields)
+        if request_model.fields_by_keys:
+            payload["fieldsByKeys"] = True
+        return json.dumps(payload).encode("utf-8")
+
     def _build_authorization_header(self, auth_mode: str) -> str:
         if auth_mode == "bearer":
             return f"Bearer {self._settings.api_token}"
@@ -515,6 +594,48 @@ class JiraClient:
             custom_fields=_extract_custom_fields(fields),
             links=_extract_links(fields.get("issuelinks")),
             comments=_extract_comments(fields.get("comment")),
+        )
+
+    def _normalize_search_results(
+        self,
+        response_payload: dict[str, Any],
+        request_model: SearchRequest,
+    ) -> JiraSearchResult:
+        issues_payload = response_payload.get("issues")
+        if not isinstance(issues_payload, list):
+            issues_payload = []
+
+        issues = [
+            self._normalize_search_issue(issue_payload)
+            for issue_payload in issues_payload
+            if isinstance(issue_payload, dict)
+        ]
+        return JiraSearchResult(
+            query=request_model.jql,
+            mode="raw-jql",
+            total=_int_value(response_payload.get("total"), default=len(issues)),
+            returned=len(issues),
+            start_at=_int_value(response_payload.get("startAt"), default=request_model.start_at),
+            max_results=_int_value(response_payload.get("maxResults"), default=request_model.max_results),
+            issues=issues,
+        )
+
+    def _normalize_search_issue(self, issue_payload: dict[str, Any]) -> JiraSearchIssue:
+        fields = issue_payload.get("fields")
+        if not isinstance(fields, dict):
+            fields = {}
+
+        source_key = _string_value(issue_payload.get("key"))
+        return JiraSearchIssue(
+            issue_key=source_key,
+            summary=_string_value(fields.get("summary")),
+            status=_nested_name(fields.get("status")),
+            issue_type=_nested_name(fields.get("issuetype")),
+            project_key=_nested_key(fields.get("project")),
+            assignee=_assignee_name(fields.get("assignee")),
+            reporter=_reporter_name(fields.get("reporter")),
+            updated=_string_value(fields.get("updated")),
+            source_url=f"{self._settings.base_url.rstrip('/')}/browse/{source_key}",
         )
 
     def _extract_http_error_detail(self, exc: error.HTTPError) -> tuple[str, dict[str, str]]:
@@ -608,6 +729,23 @@ def _assignee_name(value: Any) -> str:
     if isinstance(value, dict):
         return _string_value(value.get("displayName") or value.get("accountId"))
     return ""
+
+
+def _reporter_name(value: Any) -> str:
+    if isinstance(value, dict):
+        return _string_value(value.get("displayName") or value.get("accountId"))
+    return ""
+
+
+def _int_value(value: Any, *, default: int) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _extract_custom_fields(fields: dict[str, Any]) -> dict[str, Any]:

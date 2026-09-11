@@ -34,11 +34,12 @@ The portable deployment shape is the one you want when the tool should stay in t
 The CLI is now functional end to end for the core workflow. Current capabilities:
 
 1. Fetch a single Jira issue for `test-case`, `requirement`, and `problem-report`.
-2. Normalize Jira and Synapse or TestRay responses into smaller agent-friendly JSON.
-3. Save normalized JSON and optional raw payload JSON in `jira-output/`.
-4. Support focused fetch sections such as `links`, `comments`, `authored-steps`, `ad-hoc-runs`, and `test-management`.
-5. Prompt for missing Jira settings on first use, save them locally, and retry the fetch automatically.
-6. Deploy as a portable workspace bundle under `.github/tools/jira-context/` plus the Copilot skill under `.github/skills/jira-context-cli/`.
+2. Search Jira with raw JQL and save a normalized issue list for downstream analysis.
+3. Normalize Jira and Synapse or TestRay responses into smaller agent-friendly JSON.
+4. Save normalized JSON and optional raw payload JSON in `jira-output/`.
+5. Support focused fetch sections such as `links`, `comments`, `authored-steps`, `ad-hoc-runs`, and `test-management`.
+6. Prompt for missing Jira settings on first use, save them locally, and retry the fetch automatically.
+7. Deploy as a portable workspace bundle under `.github/tools/jira-context/` plus the Copilot skill under `.github/skills/jira-context-cli/`.
 
 The workspace skill at `.github/skills/jira-context-cli/` is the active Copilot integration path for this pure-CLI workflow. In the surrounding `Dev-Sidecar` workspace, the workspace-root `.github/copilot-instructions.md` can provide repo-aware Copilot context without placing that file inside the simulated deployment tree in this repository.
 
@@ -60,6 +61,12 @@ Then run a first fetch:
 
 ```powershell
 .\.github\tools\jira-context\jira-context.exe fetch requirement DMFDREQ-1448
+```
+
+Or run a saved JQL search:
+
+```powershell
+.\.github\tools\jira-context\jira-context.exe search --jql "assignee = \"Dustin Marek\" ORDER BY updated DESC" --save-normalized-to .\.github\tools\jira-context\jira-output\dustin-marek-search.json
 ```
 
 If Jira settings are missing, the CLI will prompt once, save them locally, and retry the fetch automatically.
@@ -92,9 +99,17 @@ The checked-in `jira-context.cmd` wrapper now prefers a sibling `jira-context.ex
 
 For agent-driven `fetch`, the canonical payload should be a saved normalized JSON file created with `--save-normalized-to`.
 After the fetch completes, open that saved normalized JSON file directly instead of re-reading terminal output.
+For agent-driven `search`, the canonical payload should also be a saved normalized JSON file created with `--save-normalized-to`.
+After the search completes, open that saved normalized JSON file directly instead of re-reading terminal output.
 If you also want the original raw payload JSON, use `--include-raw-payload` or `--save-raw-payload-to`; keep the raw payload on disk unless it is needed.
 Do not treat Copilot chat-session transcript files or temporary terminal capture files as the primary artifact when the normalized JSON file already exists.
 Keep runtime payload files under the harness root, not inside `.github/skills/`, so the skill content remains shareable and version-controlled without artifact churn.
+
+Raw JQL search example:
+
+```text
+./jira-context.cmd search --jql "assignee = \"Dustin Marek\" ORDER BY updated DESC" --save-normalized-to ./jira-output/dustin-marek-search.json
+```
 
 On first run, if required Jira settings are missing, the CLI will prompt for them interactively, save them to a local `.env` file in the project root, and then retry the same fetch command.
 
