@@ -28,11 +28,13 @@ Keep the deployed copy synchronized with this source file.
 2. For a small or focused fetch, run the CLI normally and treat stdout as the normalized payload the agent should read.
 3. If the payload may be large, use `--save-normalized-to` immediately so the normalized JSON is written intentionally to `jira-output/` by the CLI.
 4. Read the saved normalized JSON file and access its known stable keys directly before doing any generic text processing.
-5. If the user wants a trust artifact too, add `--include-raw-payload` or `--save-raw-payload-to`. Keep the raw payload on disk and out of the main summary path unless it is needed.
-6. Only open the raw artifact file or use text-search when the normalized schema is genuinely unknown or the user explicitly wants source-payload details.
-7. When the user asks for a specific slice, prefer `--section` over a full dump.
-8. If the CLI fails or the Jira/TestRay shape is unclear, use the troubleshooting commands in [debugging reference](./references/debugging.md) before concluding the data is unavailable.
-9. For simple fetch validation, request execution of the direct CLI command only. Do not wrap it in a generated `pwsh` program just to observe side effects.
+5. If the first fetch is a `test-case`, always inspect and digest the currently linked requirements from that normalized payload before finishing the initial analysis, unless the user explicitly asked to stay on the test case only.
+6. If the user wants a trust artifact too, add `--include-raw-payload` or `--save-raw-payload-to`. Keep the raw payload on disk and out of the main summary path unless it is needed.
+7. Only open the raw artifact file or use text-search when the normalized schema is genuinely unknown or the user explicitly wants source-payload details.
+8. When the user asks for a specific slice, prefer `--section` over a full dump.
+9. If the CLI fails or the Jira/TestRay shape is unclear, use the troubleshooting commands in [debugging reference](./references/debugging.md) before concluding the data is unavailable.
+10. For simple fetch validation, request execution of the direct CLI command only. Do not wrap it in a generated `pwsh` program just to observe side effects.
+11. After the initial analysis, always tell the user what the next query layer is, if any, for example linked requirements, related issues on a requirement, or an open problem report worth expanding.
 
 ## Explain Fetch
 - `fetch` retrieves one Jira issue key and normalizes it into a smaller, stable JSON schema for the agent.
@@ -72,45 +74,65 @@ Use the exact command patterns in [commands reference](./references/commands.md)
 - Explain `--include-raw-payload` plainly as: normalized JSON stays on stdout, and the original heavy raw payload is written to `.artifacts/tmp/`.
 - The agent only sees the raw artifact if it explicitly opens that file afterward. A fetch alone does not automatically stuff the raw payload into the model context.
 - After saving normalized output, read the known keys directly and summarize from that file rather than using generic text-search.
+- Present data in markdown tables whenever the fields fit cleanly into rows and columns. Use bullets only for long prose, detailed commentary, or evidence that does not fit a table cleanly.
+- When a test case is fetched first, include the current linked requirements in the initial summary rather than treating them as optional follow-up context.
 - Use `--section comments` first when the user wants narrative history such as who worked on the issue, promotions or demotions mentioned in comments, bug discovery notes, repro notes, linked sub-task keys mentioned in comments, or bulk-update notes.
 - Do not claim that `comments` includes Jira field-change history, status-transition history, or every workflow action. That requires changelog data, which is not yet normalized by the CLI.
 - If the CLI reports missing config or auth, tell the user exactly which saved Jira setting is missing instead of guessing.
 - Only use raw payload inspection or text-search against normalized output when the schema is actually unknown. Read the normalized JSON keys directly first.
+- End the summary with a short `Next Query Layers` section whenever more graph edges exist that could be explored usefully.
 
 ## Summary Style
 - Keep the CLI fetch pure. Do not invent synthetic sections such as a combined step view.
 - When the user asks for a rundown after a full fetch, present it as a clean chat summary built from the fetched sections.
-- Use short headings, strong labels, and compact bullets so the chat answer feels deliberate rather than like a JSON paraphrase.
+- Prefer markdown tables whenever they make the data easier to scan, especially for snapshots, linked items, run history, and requirement lists.
+- Use short headings, strong labels, and compact commentary so the chat answer feels deliberate rather than like a JSON paraphrase.
 - Prefer this order for test-case rundowns:
 	1. Snapshot: issue key, type, status, assignee, summary.
-	2. Test Intent: short objective, linked requirements, step count.
-	3. Execution Signals: latest ad hoc run status, notable failed steps, attachments or screenshots if present.
-	4. Related Issues: linked problem reports, related epics, or referenced issues.
-	5. Comments Worth Reading: only the notable comments, with who and why they matter.
+	2. Current Requirements: linked requirements for the current test case, plus any immediate signals they should be expanded next.
+	3. Test Intent: short objective, step count.
+	4. Execution Signals: latest ad hoc run status, notable failed steps, attachments or screenshots if present.
+	5. Related Issues: linked problem reports, related epics, or referenced issues.
+	6. Comments Worth Reading: only the notable comments, with who and why they matter.
+	7. Next Query Layers: the most useful unexplored branches, stated explicitly.
 - Preferred chat shape:
 
 ```markdown
 **Snapshot**
-MFD-7754 | Test Case | Draft | Assignee: Julio Fuentes Jr (Contractor)
-DELTA - DIAG XPDR Reported Parameter Callsign Test Case
+| Key | Type | Status | Assignee | Summary |
+| --- | --- | --- | --- | --- |
+| MFD-7754 | Test Case | Draft | Julio Fuentes Jr (Contractor) | DELTA - DIAG XPDR Reported Parameter Callsign Test Case |
+
+**Current Requirements**
+| Requirement | Summary | Why It Matters | Next Layer |
+| --- | --- | --- | --- |
+| DMFDREQ-1448 | DIAG XPDR Reported Parameter Callsign | Current requirement linked to the test case | Check its related issues if the failure may be a requirement mismatch |
 
 **Test Intent**
-- Objective: Show that the DIAG XPDR page correctly displays the Callsign.
-- Linked requirements: DMFDREQ-1448
-- Current authored steps: 8
+| Objective | Authored Steps |
+| --- | --- |
+| Show that the DIAG XPDR page correctly displays the Callsign. | 8 |
 
 **Execution Signals**
-- Latest ad hoc run: Failed on 16/Jul/26 9:47 AM by YuJ
-- Notable result: step 8 failed on the value 128 case
-- Evidence: screenshot-1.png
+| Latest Run | Status | Notable Result | Evidence |
+| --- | --- | --- | --- |
+| 16/Jul/26 9:47 AM by YuJ | Failed | Step 8 failed on the value 128 case | screenshot-1.png |
 
 **Related Issues**
-- Problem report: MFD-8100 | Open | DIAG-XPDR Callsign bug found
-- Reference: APRD-1743 | Closed | MFD-7754 value 128 prevents display
+| Issue | Relationship | Status | Summary |
+| --- | --- | --- | --- |
+| MFD-8100 | relates to | Open | DIAG-XPDR Callsign bug found |
+| APRD-1743 | references | Closed | MFD-7754 value 128 prevents display |
 
 **Comments Worth Reading**
 - 2024-02-15 | Eric Schubel: possible bug discovered with value 128; recommended demotion to Draft.
 - 2024-02-15 | Lizette Osorio: reproduced the bug and noted framework or VM crash afterward.
+
+**Next Query Layers**
+| Next Node | Why Query It |
+| --- | --- |
+| DMFDREQ-1448 | The current requirement may have related issues or lineage that explains the failing expectation. |
+| MFD-8100 | The open problem report may confirm whether the latest failure is already understood and tracked. |
 ```
 
 - Keep each section tight. If a section has nothing useful, say `None found` instead of padding it.
