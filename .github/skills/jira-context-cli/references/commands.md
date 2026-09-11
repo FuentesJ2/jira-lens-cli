@@ -21,6 +21,32 @@ Ask to run or approve the direct fetch command itself. Do not generate a PowerSh
 Always include `--save-normalized-to` for agent-driven fetches, then open that saved JSON file directly.
 Do not inspect Copilot chat-session transcript files such as `chat-session-resources/.../content.txt` when the normalized JSON file already exists.
 
+## People Search Workflow
+
+When the user asks which issues a person is working on now or worked on before, search first and fetch second.
+
+Default agent person search:
+
+```powershell
+<workspace-root>/.github/tools/jira-context/jira-context.exe search person "Dustin Marek" --mode current-or-history --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/dustin-marek-current-or-history.json
+```
+
+Raw JQL power-user search:
+
+```powershell
+<workspace-root>/.github/tools/jira-context/jira-context.exe search --jql "assignee = \"Dustin Marek\" OR assignee WAS \"Dustin Marek\" ORDER BY updated DESC" --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/dustin-marek-search.json
+```
+
+Read the saved normalized search file first. Use the `issues`, `query`, `total`, `returned`, `start_at`, and `max_results` keys directly from that JSON before deciding what to fetch next.
+
+Example pivot fetch after the search returns `MFD-9212`:
+
+```powershell
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch problem-report MFD-9212 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-9212-normalized.json
+```
+
+Do not skip straight to fetch when the user started with a person prompt, and do not mine transcript captures or repo exports to guess the issue key.
+
 Default agent fetch:
 
 ```powershell
