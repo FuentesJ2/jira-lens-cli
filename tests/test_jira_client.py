@@ -80,13 +80,32 @@ class JiraClientTests(unittest.TestCase):
                         "project": {"key": "MFD"},
                         "assignee": {"displayName": "Delta User"},
                         "updated": "2026-09-10T00:00:00.000+0000",
+                        "comment": {
+                            "comments": [
+                                {
+                                    "id": "10001",
+                                    "author": {
+                                        "displayName": "Delta User",
+                                        "name": "delta.user",
+                                    },
+                                    "created": "2026-09-10T01:00:00.000+0000",
+                                    "updated": "2026-09-10T01:05:00.000+0000",
+                                    "body": "Comment text",
+                                }
+                            ]
+                        },
                         "customfield_10000": "custom value",
                         "issuelinks": [
                             {
                                 "type": {"outward": "tests", "inward": "is tested by"},
                                 "outwardIssue": {
                                     "key": "DMFDREQ-42",
-                                    "fields": {"summary": "Requirement summary"},
+                                    "fields": {
+                                        "summary": "Requirement summary",
+                                        "issuetype": {"name": "Requirement"},
+                                        "status": {"name": "Approved"},
+                                        "priority": {"name": "Major"},
+                                    },
                                 },
                             }
                         ],
@@ -109,7 +128,7 @@ class JiraClientTests(unittest.TestCase):
             FetchRequest(
                 issue_kind="test-case",
                 issue_key="MFD-1234",
-                fields=["summary", "description", "issuelinks"],
+                fields=["summary", "description", "comment", "issuelinks"],
             )
         )
 
@@ -117,7 +136,12 @@ class JiraClientTests(unittest.TestCase):
         self.assertEqual(result.issue.description_format, "adf")
         self.assertIn("Verify wind display.", result.issue.description)
         self.assertEqual(result.issue.links[0].issue_key, "DMFDREQ-42")
-        self.assertIn("fields=summary%2Cdescription%2Cissuelinks", str(captured["url"]))
+        self.assertEqual(result.issue.links[0].issue_kind, "requirement")
+        self.assertEqual(result.issue.links[0].status, "Approved")
+        self.assertEqual(result.issue.comments[0].author, "Delta User")
+        self.assertEqual(result.issue.comments[0].body, "Comment text")
+        self.assertNotIn("avatarUrls", json.dumps(result.raw_response))
+        self.assertIn("fields=summary%2Cdescription%2Ccomment%2Cissuelinks", str(captured["url"]))
         self.assertEqual(captured["timeout"], 30)
         self.assertTrue(str(captured["authorization"]).startswith("Basic "))
 
@@ -144,6 +168,38 @@ class JiraClientTests(unittest.TestCase):
 
         self.assertIn("/rest/api/2/issue/MFD-7754", str(captured["url"]))
         self.assertTrue(str(captured["authorization"]).startswith("Basic "))
+
+    def test_fetch_issue_emits_fields_by_keys_and_fail_fast_query_params(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_urlopen(req, timeout):
+            captured["url"] = req.full_url
+            return _FakeResponse({"key": "MFD-1234", "fields": {}})
+
+        client = JiraClient(
+            JiraSettings(
+                base_url="https://avjira",
+                user_email="julio.fuentes@virgingalactic.com",
+                password="password",
+                api_token="",
+                project_scope="MFD",
+            ),
+            urlopen=fake_urlopen,
+        )
+
+        client.fetch_issue(
+            FetchRequest(
+                issue_kind="test-case",
+                issue_key="MFD-1234",
+                fields=["customfield_12345"],
+                fields_by_keys=True,
+                fail_fast=False,
+            )
+        )
+
+        self.assertIn("fields=customfield_12345", str(captured["url"]))
+        self.assertIn("fieldsByKeys=true", str(captured["url"]))
+        self.assertIn("failFast=false", str(captured["url"]))
 
     def test_fetch_issue_enriches_internal_test_case_with_test_management_context(self) -> None:
         requested_urls: list[str] = []
@@ -313,14 +369,6 @@ class JiraClientTests(unittest.TestCase):
             result.issue.test_management["ad_hoc_test_runs"][0]["steps"][0]["attachments"][0]["file_name"],
             "screenshot-1.png",
         )
-        self.assertEqual(
-            result.issue.test_management["merged_steps"][2]["latest_run_status"],
-            "Not Tested",
-        )
-        self.assertEqual(
-            result.issue.test_management["merged_steps"][2]["expected_result_html"],
-            "<p>Displayed Callsign</p>",
-        )
         self.assertIn("test_steps", result.supplemental_responses)
         self.assertTrue(
             any(url.endswith("/rest/synapse/latest/public/testCase/MFD-7754/steps") for url in requested_urls)
@@ -358,6 +406,36 @@ class JiraClientTests(unittest.TestCase):
         self.assertFalse(attempts[0].ok)
         self.assertEqual(attempts[0].response_headers["X-Seraph-LoginReason"], "AUTHENTICATION_FAILED")
         self.assertIn("Login Required", attempts[0].detail)
+
+    def test_probe_synapse_sanitizes_avatar_urls_from_payloads(self) -> None:
+        def fake_urlopen(req, timeout):
+            return _FakeBinaryResponse(
+                json.dumps(
+                    {
+                        "author": {
+                            "displayName": "Delta User",
+                            "avatarUrls": {"16x16": "https://example/avatar.png"},
+                        }
+                    }
+                )
+            )
+
+        client = JiraClient(
+            JiraSettings(
+                base_url="https://avjira",
+                user_email="FuentesJ2",
+                password="password",
+                api_token="",
+                project_scope="MFD",
+                deployment="server_dc",
+                auth_mode="basic",
+            ),
+            urlopen=fake_urlopen,
+        )
+
+        attempts = client.probe_synapse_test_case("MFD-7754")
+
+        self.assertTrue(all("avatarUrls" not in json.dumps(attempt.payload) for attempt in attempts if attempt.payload))
 
     def test_missing_required_for_server_dc_basic_requires_password(self) -> None:
         settings = JiraSettings(

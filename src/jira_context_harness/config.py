@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Dict, Mapping, Optional
 
+from jira_context_harness.runtime_paths import runtime_root
+
 
 DEFAULT_BASE_URL = "https://avjira"
 DEFAULT_PROJECT_SCOPE = "MFD"
@@ -65,7 +67,7 @@ class JiraSettings:
 
 
 def default_env_file_path() -> Path:
-    return Path(__file__).resolve().parents[2] / ".env"
+    return runtime_root() / ".env"
 
 
 def load_settings(

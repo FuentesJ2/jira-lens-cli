@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -27,6 +28,7 @@ class BuildParserTests(unittest.TestCase):
         self.assertEqual(args.issue_key, "MFD-1234")
         self.assertEqual(args.format, "json")
         self.assertEqual(args.view, "normalized")
+        self.assertFalse(args.include_raw_payload)
 
     def test_fetch_accepts_requirement(self) -> None:
         parser = build_parser()
@@ -36,11 +38,31 @@ class BuildParserTests(unittest.TestCase):
         self.assertEqual(args.issue_kind, "requirement")
         self.assertEqual(args.issue_key, "DMFDREQ-1234")
 
+    def test_fetch_accepts_problem_report(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["fetch", "problem-report", "MFD-8100"])
+
+        self.assertEqual(args.command, "fetch")
+        self.assertEqual(args.issue_kind, "problem-report")
+        self.assertEqual(args.issue_key, "MFD-8100")
+
     def test_fetch_accepts_raw_view(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["fetch", "test-case", "MFD-1234", "--view", "raw"])
 
         self.assertEqual(args.view, "raw")
+
+    def test_fetch_accepts_combined_view(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["fetch", "test-case", "MFD-1234", "--view", "combined"])
+
+        self.assertEqual(args.view, "combined")
+
+    def test_fetch_accepts_legacy_both_view_alias(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["fetch", "test-case", "MFD-1234", "--view", "both"])
+
+        self.assertEqual(args.view, "combined")
 
     def test_fetch_accepts_section(self) -> None:
         parser = build_parser()
@@ -54,11 +76,32 @@ class BuildParserTests(unittest.TestCase):
 
         self.assertEqual(args.section, "ad-hoc-runs")
 
-    def test_serve_mcp_is_registered(self) -> None:
+    def test_fetch_accepts_comments_section(self) -> None:
         parser = build_parser()
-        args = parser.parse_args(["serve-mcp"])
+        args = parser.parse_args(["fetch", "test-case", "MFD-1234", "--section", "comments"])
 
-        self.assertEqual(args.command, "serve-mcp")
+        self.assertEqual(args.section, "comments")
+
+    def test_fetch_accepts_include_raw_payload(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["fetch", "test-case", "MFD-1234", "--include-raw-payload"])
+
+        self.assertTrue(args.include_raw_payload)
+
+    def test_fetch_accepts_explicit_save_paths(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([
+            "fetch",
+            "test-case",
+            "MFD-1234",
+            "--save-normalized-to",
+            "C:/tmp/MFD-1234-normalized.json",
+            "--save-raw-payload-to",
+            "C:/tmp/MFD-1234-raw.json",
+        ])
+
+        self.assertEqual(args.save_normalized_to, "C:/tmp/MFD-1234-normalized.json")
+        self.assertEqual(args.save_raw_payload_to, "C:/tmp/MFD-1234-raw.json")
 
     def test_configure_is_registered(self) -> None:
         parser = build_parser()
@@ -126,7 +169,7 @@ class CliOutputTests(unittest.TestCase):
 
         self.assertIn('"key": "MFD-1234"', output)
 
-    def test_render_fetch_output_supports_section_both(self) -> None:
+    def test_render_fetch_output_supports_section_combined(self) -> None:
         result = JiraFetchResult(
             issue=JiraIssueContext(
                 issue_key="MFD-1234",
@@ -151,13 +194,59 @@ class CliOutputTests(unittest.TestCase):
         output = render_fetch_output(
             result=result,
             output_format="json",
-            view="both",
+            view="combined",
             section="ad-hoc-runs",
         )
 
         self.assertIn('"normalized": [', output)
         self.assertIn('"raw_response": [', output)
         self.assertIn('"test_run_id": 1', output)
+
+    def test_render_fetch_output_supports_comments_section(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-1234",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://example.atlassian.net/browse/MFD-1234",
+                comments=[
+                    {
+                        "comment_id": "10001",
+                        "author": "Delta User",
+                        "author_key": "delta.user",
+                        "created": "2026-09-10T01:00:00.000+0000",
+                        "updated": "2026-09-10T01:05:00.000+0000",
+                        "body": "Comment text",
+                        "body_format": "plain_text",
+                    }
+                ],
+            ),
+            raw_response={
+                "fields": {
+                    "comment": {
+                        "comments": [{"id": "10001", "body": "Comment text"}],
+                    }
+                }
+            },
+        )
+
+        output = render_fetch_output(
+            result=result,
+            output_format="json",
+            view="combined",
+            section="comments",
+        )
+
+        self.assertIn('"normalized": [', output)
+        self.assertIn('"raw_response": [', output)
+        self.assertIn('"comment_id": "10001"', output)
 
     def test_main_emits_json_for_fetch(self) -> None:
         result = JiraFetchResult(
@@ -195,6 +284,183 @@ class CliOutputTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn('"issue_key": "MFD-1234"', stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
+
+    def test_main_include_raw_payload_writes_artifact_and_keeps_stdout_normalized(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-1234",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://example.atlassian.net/browse/MFD-1234",
+            ),
+            raw_response={"key": "MFD-1234", "fields": {"summary": "Summary"}},
+        )
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://example.atlassian.net",
+                user_email="user@example.com",
+                password="",
+                api_token="token",
+                project_scope="MFD",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.fetch_issue.return_value = result
+                with patch(
+                    "jira_context_harness.cli._write_raw_payload_artifact",
+                    return_value=Path("C:/Dev/jira-context-harness/.artifacts/tmp/fetch-test-case-MFD-1234-full-raw-payload.json"),
+                ) as artifact_mock:
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                        exit_code = main(["fetch", "test-case", "MFD-1234", "--include-raw-payload"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"issue_key": "MFD-1234"', stdout.getvalue())
+        self.assertNotIn('"raw_response"', stdout.getvalue())
+        self.assertIn("Saved raw payload artifact to", stderr.getvalue())
+        artifact_mock.assert_called_once()
+
+    def test_main_legacy_combined_view_alias_now_writes_artifact_and_emits_normalized_json(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-1234",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://example.atlassian.net/browse/MFD-1234",
+            ),
+            raw_response={"key": "MFD-1234", "fields": {"summary": "Summary"}},
+        )
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://example.atlassian.net",
+                user_email="user@example.com",
+                password="",
+                api_token="token",
+                project_scope="MFD",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.fetch_issue.return_value = result
+                with patch(
+                    "jira_context_harness.cli._write_raw_payload_artifact",
+                    return_value=Path("C:/Dev/jira-context-harness/.artifacts/tmp/fetch-test-case-MFD-1234-full-raw-payload.json"),
+                ):
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                        exit_code = main(["fetch", "test-case", "MFD-1234", "--view", "combined"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"issue_key": "MFD-1234"', stdout.getvalue())
+        self.assertNotIn('"raw_response"', stdout.getvalue())
+        self.assertIn("deprecated", stderr.getvalue())
+
+    def test_main_save_paths_write_named_normalized_and_raw_outputs(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-1234",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://example.atlassian.net/browse/MFD-1234",
+            ),
+            raw_response={"key": "MFD-1234", "fields": {"summary": "Summary"}},
+        )
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://example.atlassian.net",
+                user_email="user@example.com",
+                password="",
+                api_token="token",
+                project_scope="MFD",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.fetch_issue.return_value = result
+                with patch(
+                    "jira_context_harness.cli._write_raw_payload_artifact",
+                    return_value=Path("C:/tmp/MFD-1234-raw.json"),
+                ) as raw_mock:
+                    with patch(
+                        "jira_context_harness.cli._write_json_file",
+                        return_value=Path("C:/tmp/MFD-1234-normalized.json"),
+                    ) as json_mock:
+                        stdout = io.StringIO()
+                        stderr = io.StringIO()
+                        with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                            exit_code = main([
+                                "fetch",
+                                "test-case",
+                                "MFD-1234",
+                                "--save-normalized-to",
+                                "C:/tmp/MFD-1234-normalized.json",
+                                "--save-raw-payload-to",
+                                "C:/tmp/MFD-1234-raw.json",
+                            ])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"issue_key": "MFD-1234"', stdout.getvalue())
+        self.assertIn("Saved normalized output to C:/tmp/MFD-1234-normalized.json", stderr.getvalue())
+        self.assertIn("Saved raw payload artifact to C:/tmp/MFD-1234-raw.json", stderr.getvalue())
+        raw_mock.assert_called_once()
+        json_mock.assert_called_once()
+
+    def test_main_save_normalized_to_rejects_raw_view(self) -> None:
+        stderr = io.StringIO()
+
+        with patch("sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as exit_context:
+                main([
+                    "fetch",
+                    "test-case",
+                    "MFD-1234",
+                    "--view",
+                    "raw",
+                    "--save-normalized-to",
+                    "C:/tmp/MFD-1234-normalized.json",
+                ])
+
+        self.assertEqual(exit_context.exception.code, 2)
+        self.assertIn("--save-normalized-to only supports --view normalized", stderr.getvalue())
+
+    def test_main_save_raw_payload_to_rejects_raw_view(self) -> None:
+        stderr = io.StringIO()
+
+        with patch("sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as exit_context:
+                main([
+                    "fetch",
+                    "test-case",
+                    "MFD-1234",
+                    "--view",
+                    "raw",
+                    "--save-raw-payload-to",
+                    "C:/tmp/MFD-1234-raw.json",
+                ])
+
+        self.assertEqual(exit_context.exception.code, 2)
+        self.assertIn("--include-raw-payload cannot be combined with --view raw", stderr.getvalue())
 
     def test_main_prompts_for_missing_config_and_retries_fetch(self) -> None:
         result = JiraFetchResult(
@@ -446,14 +712,6 @@ class CliOutputTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn('"issue_key": "MFD-7754"', stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
-
-    def test_main_dispatches_serve_mcp(self) -> None:
-        with patch("jira_context_harness.mcp_server.main", return_value=0) as mcp_main_mock:
-            exit_code = main(["serve-mcp"])
-
-        self.assertEqual(exit_code, 0)
-        mcp_main_mock.assert_called_once_with()
-
 
 class LauncherSupportTests(unittest.TestCase):
     def test_cli_main_imports_from_package_surface(self) -> None:

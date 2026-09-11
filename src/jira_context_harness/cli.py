@@ -6,6 +6,7 @@ import argparse
 from dataclasses import asdict
 import getpass
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Optional, Sequence, TextIO
@@ -26,11 +27,13 @@ from jira_context_harness.jira_client import (
     JiraClientError,
     JiraConfigurationError,
 )
+from jira_context_harness.runtime_paths import raw_payload_artifact_dir
 
 
 DEFAULT_TEST_CASE_FIELDS = [
     "summary",
     "description",
+    "comment",
     "status",
     "issuetype",
     "project",
@@ -39,6 +42,10 @@ DEFAULT_TEST_CASE_FIELDS = [
     "issuelinks",
 ]
 
+RAW_PAYLOAD_ARTIFACT_DIR = raw_payload_artifact_dir()
+VALID_FETCH_VIEWS = {"normalized", "raw", "combined"}
+LEGACY_FETCH_VIEW_ALIASES = {"both": "combined"}
+
 
 def _default_fields_for(issue_kind: str) -> list[str]:
     if issue_kind == "test-case":
@@ -46,10 +53,30 @@ def _default_fields_for(issue_kind: str) -> list[str]:
     return list(DEFAULT_TEST_CASE_FIELDS)
 
 
+def _parse_fetch_view(value: str) -> str:
+    normalized = LEGACY_FETCH_VIEW_ALIASES.get(value, value)
+    if normalized not in VALID_FETCH_VIEWS:
+        allowed = ", ".join(sorted(VALID_FETCH_VIEWS | set(LEGACY_FETCH_VIEW_ALIASES)))
+        raise argparse.ArgumentTypeError(f"Unsupported --view value '{value}'. Expected one of: {allowed}")
+    return normalized
+
+
+def _artifact_slug(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    slug = slug.strip("-.")
+    return slug or "unknown"
+
+
+def _write_json_file(path: Path, payload: object) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jira-context",
-        description="Local CLI for JIRA context retrieval and MCP serving.",
+        description="Local CLI for JIRA context retrieval.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -59,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fetch_parser.add_argument(
         "issue_kind",
-        choices=["test-case", "requirement"],
+        choices=["test-case", "requirement", "problem-report"],
         help="Type of issue to fetch.",
     )
     fetch_parser.add_argument("issue_key", help="JIRA issue key, such as MFD-1234.")
@@ -71,9 +98,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fetch_parser.add_argument(
         "--view",
-        choices=["normalized", "raw", "both"],
+        type=_parse_fetch_view,
+        metavar="{normalized,raw,combined}",
         default="normalized",
-        help="Choose normalized output, raw API JSON, or both in one JSON object.",
+        help=argparse.SUPPRESS,
+    )
+    fetch_parser.add_argument(
+        "--include-raw-payload",
+        action="store_true",
+        help="Keep stdout limited to normalized JSON and also save the raw fetched payload to .artifacts/tmp for trust and inspection.",
+    )
+    fetch_parser.add_argument(
+        "--save-normalized-to",
+        default=None,
+        help="Optional file path to also save the normalized fetch output to disk.",
+    )
+    fetch_parser.add_argument(
+        "--save-raw-payload-to",
+        default=None,
+        help="Optional file path to save the raw trust payload artifact. Implies --include-raw-payload.",
     )
     fetch_parser.add_argument(
         "--section",
@@ -81,10 +124,10 @@ def build_parser() -> argparse.ArgumentParser:
             "full",
             "issue",
             "links",
+            "comments",
             "test-management",
             "authored-steps",
             "ad-hoc-runs",
-            "merged-steps",
         ],
         default="full",
         help="Return a focused subset of the fetched issue, useful for agent consumption and trust checks.",
@@ -168,10 +211,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include the full raw Jira issue response alongside the discovery report.",
     )
 
-    subparsers.add_parser(
-        "serve-mcp",
-        help="Run the local MCP server wrapper for agent tool access.",
-    )
     return parser
 
 
@@ -243,18 +282,62 @@ def _fetch_section_payloads(*, result: object, section: str) -> tuple[object, ob
             if isinstance(fields, dict):
                 raw_links = fields.get("issuelinks") or []
         return normalized.get("links", []), raw_links
+    if section == "comments":
+        raw_comments = []
+        if isinstance(raw_response, dict):
+            fields = raw_response.get("fields")
+            if isinstance(fields, dict):
+                comments_payload = fields.get("comment")
+                if isinstance(comments_payload, dict):
+                    raw_comments = comments_payload.get("comments") or []
+        return normalized.get("comments", []), raw_comments
     if section == "test-management":
         return test_management, supplemental
     if section == "authored-steps":
         return test_management.get("test_steps", []), supplemental.get("test_steps", [])
     if section == "ad-hoc-runs":
         return test_management.get("ad_hoc_test_runs", []), supplemental.get("ad_hoc_test_runs", [])
-    if section == "merged-steps":
-        return test_management.get("merged_steps", []), {
-            "test_steps": supplemental.get("test_steps", []),
-            "ad_hoc_test_runs": supplemental.get("ad_hoc_test_runs", []),
-        }
     raise ValueError(f"Unsupported section {section}")
+
+
+def _build_raw_payload_artifact(*, result: object, section: str) -> dict[str, object]:
+    if section == "full":
+        payload: dict[str, object] = {
+            "raw_response": result.raw_response,
+        }
+        supplemental = getattr(result, "supplemental_responses", {}) or {}
+        if supplemental:
+            payload["supplemental_responses"] = supplemental
+        return payload
+
+    _normalized_section, raw_section = _fetch_section_payloads(result=result, section=section)
+    return {
+        "raw_response": raw_section,
+    }
+
+
+def _write_raw_payload_artifact(
+    *,
+    result: object,
+    issue_kind: str,
+    issue_key: str,
+    section: str,
+    artifact_path: Optional[Path] = None,
+) -> Path:
+    RAW_PAYLOAD_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    if artifact_path is None:
+        artifact_name = (
+            f"fetch-{_artifact_slug(issue_kind)}-{_artifact_slug(issue_key)}-"
+            f"{_artifact_slug(section)}-raw-payload.json"
+        )
+        artifact_path = RAW_PAYLOAD_ARTIFACT_DIR / artifact_name
+    artifact_payload = {
+        "issue_key": result.issue.issue_key,
+        "issue_kind": result.issue.issue_kind,
+        "section": section,
+        "raw_payload": _build_raw_payload_artifact(result=result, section=section),
+    }
+    return _write_json_file(artifact_path, artifact_payload)
 
 
 def _resolve_settings(
@@ -442,6 +525,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "fetch":
+        legacy_combined_requested = args.view == "combined"
+        if legacy_combined_requested:
+            args.include_raw_payload = True
+            args.view = "normalized"
+        if args.save_raw_payload_to:
+            args.include_raw_payload = True
+
+        if args.include_raw_payload and args.view == "raw":
+            parser.error("--include-raw-payload cannot be combined with --view raw")
+        if args.save_normalized_to and args.format != "json":
+            parser.error("--save-normalized-to only supports --format json")
+        if args.save_normalized_to and args.view != "normalized":
+            parser.error("--save-normalized-to only supports --view normalized")
+
         if args.format == "text" and args.view != "normalized":
             parser.error("--format text only supports --view normalized")
         if args.format == "text" and args.section != "full":
@@ -468,15 +565,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(str(exc), file=sys.stderr)
             return 1
 
-        print(
-            render_fetch_output(
-                result=result,
-                output_format=args.format,
-                view=args.view,
-                section=args.section,
-            ),
-            end="",
+        rendered_output = render_fetch_output(
+            result=result,
+            output_format=args.format,
+            view=args.view,
+            section=args.section,
         )
+
+        if legacy_combined_requested:
+            print(
+                "`--view combined` is deprecated for `fetch`. Use `--include-raw-payload` instead. Stdout now stays normalized while the raw payload is written to .artifacts/tmp/.",
+                file=sys.stderr,
+            )
+
+        if args.include_raw_payload:
+            artifact_path = _write_raw_payload_artifact(
+                result=result,
+                issue_kind=args.issue_kind,
+                issue_key=args.issue_key,
+                section=args.section,
+                artifact_path=Path(args.save_raw_payload_to) if args.save_raw_payload_to else None,
+            )
+            print(f"Saved raw payload artifact to {artifact_path}", file=sys.stderr)
+
+        if args.save_normalized_to:
+            normalized_path = _write_json_file(Path(args.save_normalized_to), json.loads(rendered_output))
+            print(f"Saved normalized output to {normalized_path}", file=sys.stderr)
+
+        print(rendered_output, end="")
         return 0
 
     if args.command == "configure":
@@ -559,11 +675,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         print(json.dumps([asdict(attempt) for attempt in attempts], indent=2, sort_keys=True))
         return 0
-
-    if args.command == "serve-mcp":
-        from jira_context_harness.mcp_server import main as mcp_server_main
-
-        return mcp_server_main()
 
     parser.error("Unknown command")
     return 2

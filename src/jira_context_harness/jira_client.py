@@ -12,6 +12,7 @@ from urllib import error, parse, request
 
 from jira_context_harness.config import JiraSettings
 from jira_context_harness.models import (
+    JiraComment,
     JiraFetchResult,
     JiraFieldDiscoveryEntry,
     JiraFieldDiscoveryReport,
@@ -83,7 +84,7 @@ class JiraClient:
                 "Missing required Jira settings: " + ", ".join(missing)
             )
 
-        response_payload = self._perform_issue_get(request_model)
+        response_payload = _sanitize_payload(self._perform_issue_get(request_model))
         normalized_issue = self._normalize_issue(response_payload, request_model)
         supplemental_responses: dict[str, Any] = {}
         if request_model.issue_kind == "test-case" and _should_fetch_test_management_context(self._settings):
@@ -128,7 +129,7 @@ class JiraClient:
                             ok=True,
                             status_code=200,
                             detail="Authentication succeeded",
-                            payload=payload if isinstance(payload, dict) else None,
+                            payload=_sanitize_payload(payload) if isinstance(payload, dict) else None,
                         )
                     )
                 except error.HTTPError as exc:
@@ -161,14 +162,14 @@ class JiraClient:
                 "Missing required Jira settings: " + ", ".join(missing)
             )
 
-        response_payload = self._perform_issue_get(
+        response_payload = _sanitize_payload(self._perform_issue_get(
             FetchRequest(
                 issue_kind="field-discovery",
                 issue_key=issue_key,
                 fields=["*all"],
                 expand=["names", "schema"],
             )
-        )
+        ))
 
         fields = response_payload.get("fields")
         names = response_payload.get("names")
@@ -253,7 +254,7 @@ class JiraClient:
                         ok=True,
                         status_code=200,
                         detail=f"Synapse probe succeeded with content type {content_type or 'unknown'}",
-                        payload=payload,
+                        payload=_sanitize_payload(payload),
                     )
                 )
             except error.HTTPError as exc:
@@ -370,10 +371,9 @@ class JiraClient:
                 }
                 continue
 
-            supplemental_responses[key] = payload
-            test_management[key] = _normalize_test_management_payload(key, payload)
-
-        test_management["merged_steps"] = _build_merged_steps(test_management)
+            sanitized_payload = _sanitize_payload(payload)
+            supplemental_responses[key] = sanitized_payload
+            test_management[key] = _normalize_test_management_payload(key, sanitized_payload)
 
         return test_management, supplemental_responses
 
@@ -467,6 +467,10 @@ class JiraClient:
             query_params["expand"] = ",".join(request_model.expand)
         if request_model.properties:
             query_params["properties"] = ",".join(request_model.properties)
+        if request_model.fields_by_keys:
+            query_params["fieldsByKeys"] = "true"
+        if not request_model.fail_fast:
+            query_params["failFast"] = "false"
         return query_params
 
     def _build_authorization_header(self, auth_mode: str) -> str:
@@ -510,6 +514,7 @@ class JiraClient:
             source_url=f"{self._settings.base_url.rstrip('/')}/browse/{source_key}",
             custom_fields=_extract_custom_fields(fields),
             links=_extract_links(fields.get("issuelinks")),
+            comments=_extract_comments(fields.get("comment")),
         )
 
     def _extract_http_error_detail(self, exc: error.HTTPError) -> tuple[str, dict[str, str]]:
@@ -540,6 +545,19 @@ class JiraClient:
         if response_headers:
             detail = detail + f"; headers={response_headers}"
         return detail, response_headers
+
+
+def _sanitize_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "avatarUrls":
+                continue
+            sanitized[key] = _sanitize_payload(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_payload(item) for item in value]
+    return value
 
 
 def _extract_description(value: Any) -> tuple[str, str]:
@@ -615,8 +633,14 @@ def _extract_links(value: Any) -> list[JiraLink]:
         if isinstance(outward_issue, dict):
             outward_fields = outward_issue.get("fields")
             summary = ""
+            issue_type = ""
+            status = ""
+            priority = ""
             if isinstance(outward_fields, dict):
                 summary = _string_value(outward_fields.get("summary"))
+                issue_type = _nested_name(outward_fields.get("issuetype"))
+                status = _nested_name(outward_fields.get("status"))
+                priority = _nested_name(outward_fields.get("priority"))
             links.append(
                 JiraLink(
                     direction="outward",
@@ -625,14 +649,24 @@ def _extract_links(value: Any) -> list[JiraLink]:
                     ),
                     issue_key=_string_value(outward_issue.get("key")),
                     summary=summary,
+                    issue_kind=_semantic_issue_kind(issue_type),
+                    issue_type=issue_type,
+                    status=status,
+                    priority=priority,
                 )
             )
 
         if isinstance(inward_issue, dict):
             inward_fields = inward_issue.get("fields")
             summary = ""
+            issue_type = ""
+            status = ""
+            priority = ""
             if isinstance(inward_fields, dict):
                 summary = _string_value(inward_fields.get("summary"))
+                issue_type = _nested_name(inward_fields.get("issuetype"))
+                status = _nested_name(inward_fields.get("status"))
+                priority = _nested_name(inward_fields.get("priority"))
             links.append(
                 JiraLink(
                     direction="inward",
@@ -641,10 +675,57 @@ def _extract_links(value: Any) -> list[JiraLink]:
                     ),
                     issue_key=_string_value(inward_issue.get("key")),
                     summary=summary,
+                    issue_kind=_semantic_issue_kind(issue_type),
+                    issue_type=issue_type,
+                    status=status,
+                    priority=priority,
                 )
             )
 
     return links
+
+
+def _extract_comments(value: Any) -> list[JiraComment]:
+    if not isinstance(value, dict):
+        return []
+
+    comments_value = value.get("comments")
+    if not isinstance(comments_value, list):
+        return []
+
+    comments: list[JiraComment] = []
+    for item in comments_value:
+        if not isinstance(item, dict):
+            continue
+        author_value = item.get("author") if isinstance(item.get("author"), dict) else {}
+        body_text, body_format = _extract_description(item.get("body"))
+        comments.append(
+            JiraComment(
+                comment_id=_string_value(item.get("id")),
+                author=_string_value(
+                    author_value.get("displayName")
+                    or author_value.get("name")
+                    or author_value.get("accountId")
+                ),
+                author_key=_string_value(
+                    author_value.get("name")
+                    or author_value.get("key")
+                    or author_value.get("accountId")
+                ),
+                created=_string_value(item.get("created")),
+                updated=_string_value(item.get("updated")),
+                body=body_text,
+                body_format=body_format,
+            )
+        )
+    return comments
+
+
+def _semantic_issue_kind(issue_type: str) -> str:
+    normalized = issue_type.strip().lower()
+    if not normalized:
+        return ""
+    return normalized.replace(" ", "-")
 
 
 def _has_meaningful_value(value: Any) -> bool:
@@ -838,79 +919,6 @@ def _normalize_test_step(step: dict[str, Any], *, fallback_sequence_number: Opti
         "actual_result_html": actual_result_html,
         "requirement_keys": _extract_issue_keys(expected_result_raw),
         "attachments": _normalize_step_attachments(step.get("testRunStepAttachments")),
-    }
-
-
-def _build_merged_steps(test_management: dict[str, Any]) -> list[dict[str, Any]]:
-    authored_steps = test_management.get("test_steps") if isinstance(test_management.get("test_steps"), list) else []
-    ad_hoc_runs = test_management.get("ad_hoc_test_runs") if isinstance(test_management.get("ad_hoc_test_runs"), list) else []
-    latest_run = ad_hoc_runs[0] if ad_hoc_runs else {}
-    latest_run_steps = latest_run.get("steps") if isinstance(latest_run, dict) and isinstance(latest_run.get("steps"), list) else []
-    latest_steps_by_number = {
-        _string_value(step.get("step_number")): step
-        for step in latest_run_steps
-        if isinstance(step, dict) and _string_value(step.get("step_number"))
-    }
-
-    merged: list[dict[str, Any]] = []
-    seen_step_numbers: set[str] = set()
-    for authored_step in authored_steps:
-        if not isinstance(authored_step, dict):
-            continue
-        step_number = _string_value(authored_step.get("step_number"))
-        merged.append(_merge_step_versions(authored_step, latest_steps_by_number.get(step_number), latest_run))
-        if step_number:
-            seen_step_numbers.add(step_number)
-
-    for step_number, latest_step in latest_steps_by_number.items():
-        if step_number in seen_step_numbers:
-            continue
-        merged.append(_merge_step_versions(None, latest_step, latest_run))
-
-    return merged
-
-
-def _merge_step_versions(
-    authored_step: Optional[dict[str, Any]],
-    latest_run_step: Optional[dict[str, Any]],
-    latest_run: Optional[dict[str, Any]],
-) -> dict[str, Any]:
-    authored_step = authored_step or {}
-    latest_run_step = latest_run_step or {}
-    latest_run = latest_run or {}
-
-    authored_requirements = authored_step.get("requirement_keys") if isinstance(authored_step.get("requirement_keys"), list) else []
-    latest_requirements = latest_run_step.get("requirement_keys") if isinstance(latest_run_step.get("requirement_keys"), list) else []
-    requirement_keys: list[str] = []
-    for key in authored_requirements + latest_requirements:
-        value = _string_value(key)
-        if value and value not in requirement_keys:
-            requirement_keys.append(value)
-
-    return {
-        "step_number": _string_value(authored_step.get("step_number") or latest_run_step.get("step_number")),
-        "authored_step_id": authored_step.get("step_id"),
-        "latest_run_step_id": latest_run_step.get("step_id"),
-        "step_text": _string_value(authored_step.get("step_text") or latest_run_step.get("step_text")),
-        "step_raw": _string_value(authored_step.get("step_raw") or latest_run_step.get("step_raw")),
-        "step_html": _string_value(authored_step.get("step_html") or latest_run_step.get("step_html")),
-        "expected_result_text": _string_value(
-            authored_step.get("expected_result_text") or latest_run_step.get("expected_result_text")
-        ),
-        "expected_result_raw": _string_value(
-            authored_step.get("expected_result_raw") or latest_run_step.get("expected_result_raw")
-        ),
-        "expected_result_html": _string_value(
-            authored_step.get("expected_result_html") or latest_run_step.get("expected_result_html")
-        ),
-        "actual_result_text": _string_value(latest_run_step.get("actual_result_text")),
-        "actual_result_raw": _string_value(latest_run_step.get("actual_result_raw")),
-        "actual_result_html": _string_value(latest_run_step.get("actual_result_html")),
-        "latest_run_status": _string_value(latest_run_step.get("status") or latest_run.get("status")),
-        "latest_run_id": latest_run.get("test_run_id"),
-        "latest_execution_on": _string_value(latest_run.get("execution_on")),
-        "attachments": latest_run_step.get("attachments") if isinstance(latest_run_step.get("attachments"), list) else [],
-        "requirement_keys": requirement_keys,
     }
 
 

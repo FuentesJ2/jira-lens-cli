@@ -12,6 +12,21 @@ class JiraLink:
     relationship: str
     issue_key: str
     summary: str = ""
+    issue_kind: str = ""
+    issue_type: str = ""
+    status: str = ""
+    priority: str = ""
+
+
+@dataclass
+class JiraComment:
+    comment_id: str
+    author: str
+    author_key: str
+    created: str
+    updated: str
+    body: str
+    body_format: str
 
 
 @dataclass
@@ -29,6 +44,7 @@ class JiraIssueContext:
     source_url: str
     custom_fields: dict[str, Any] = field(default_factory=dict)
     links: list[JiraLink] = field(default_factory=list)
+    comments: list[JiraComment] = field(default_factory=list)
     test_management: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:

@@ -6,14 +6,22 @@ This project is intentionally outside the `mfd` and `mfd-test-framework` reposit
 
 ## Python compatibility
 
-The harness currently targets Python 3.10+.
+The harness currently targets Python 3.9+.
+
+## Deployment shape
+
+There are two valid runtime shapes now:
+
+1. Development shape: source code plus `jira-context.cmd`
+2. Portable deployment shape: compiled `jira-context.exe` plus support folders
+
+The portable deployment shape is the one you want when the tool should stay in the workspace without exposing the full source tree.
 
 ## Initial goals
 
 1. Provide a human-usable CLI for fetching JIRA issue context.
-2. Wrap the same core logic in a local MCP server for agent use.
-3. Start with single-issue fetches for test cases and requirements.
-4. Defer graph expansion, link crawling, and attachment workflows until later slices.
+2. Start with single-issue fetches for test cases and requirements.
+3. Defer graph expansion, link crawling, and attachment workflows until later slices.
 
 ## Planned structure
 
@@ -25,7 +33,7 @@ The harness currently targets Python 3.10+.
 
 Phase 1 is in progress.
 
-The CLI can now fetch a single Jira issue against either Jira Cloud or an internal Jira Server/Data Center-style host by trying the appropriate issue endpoint variants. MCP tool registration is not implemented yet.
+The CLI can now fetch a single Jira issue against either Jira Cloud or an internal Jira Server/Data Center-style host by trying the appropriate issue endpoint variants. The workspace skill at `.github/skills/jira-context-cli/` is the active Copilot integration path for this pure-CLI workflow.
 
 The currently known browser issue URL for this workflow is `https://avjira/browse/MFD-7754`. If that is the authoritative Jira host, the harness may need to target Jira Server or Data Center REST endpoints instead of Jira Cloud v3.
 
@@ -48,10 +56,18 @@ JIRA_AUTH_MODE=basic
 If you have not installed the package yet, run the launcher from the project root:
 
 ```text
-python run_cli.py fetch test-case MFD-1234
+./jira-context.cmd fetch test-case MFD-1234
 ```
 
-This is the most reliable Phase 1 path for local validation because it does not depend on `pip install -e .` or shell `PATH` setup.
+This is the most reliable local validation path because it does not depend on `pip install -e .` or shell `PATH` setup.
+
+The checked-in `jira-context.cmd` wrapper now prefers a sibling `jira-context.exe` when one exists. If no executable is present, it falls back to Python source execution.
+
+For `fetch`, stdout is the agent-facing payload. That should stay small and cleaned up.
+Normal `fetch` should not create any background artifact files.
+If you also want the original heavy trust payload, use `--include-raw-payload`; the CLI will write that raw material to `.artifacts/tmp/` and keep stdout normalized.
+If you want the file destinations to be explicit in one command, use `--save-normalized-to` and `--save-raw-payload-to`.
+Keep runtime payload files under the harness root, not inside `.github/skills/`, so the skill content remains shareable and version-controlled without artifact churn.
 
 On first run, if required Jira settings are missing, the CLI will prompt for them interactively, save them to a local `.env` file in the project root, and then retry the same fetch command.
 
@@ -66,37 +82,37 @@ Normal team onboarding defaults to `https://avjira`, `server_dc`, `basic`, and `
 If you need to update the saved configuration later, run:
 
 ```text
-python run_cli.py configure
+./jira-context.cmd configure
 ```
 
 If someone needs to override the default internal Jira assumptions, use:
 
 ```text
-python run_cli.py configure --advanced
+./jira-context.cmd configure --advanced
 ```
 
 To diagnose whether your saved credentials can authenticate to Jira at all, run:
 
 ```text
-python run_cli.py probe-auth > jira-auth-probe.json
+./jira-context.cmd probe-auth > jira-auth-probe.json
 ```
 
 To discover which Jira fields actually store test steps, requirement panels, attachments, test plans, and related Synapse data for a specific issue, run:
 
 ```text
-python run_cli.py discover-fields MFD-7754 > jira-field-discovery.json
+./jira-context.cmd discover-fields MFD-7754 > jira-field-discovery.json
 ```
 
 If you also want the full all-fields Jira response in the same output file, run:
 
 ```text
-python run_cli.py discover-fields MFD-7754 --include-raw > jira-field-discovery-full.json
+./jira-context.cmd discover-fields MFD-7754 --include-raw > jira-field-discovery-full.json
 ```
 
 If the standard Jira issue response still does not expose the structured step grid, probe the TestRay or Synapse plugin endpoints directly:
 
 ```text
-python run_cli.py probe-synapse MFD-7754 > jira-synapse-probe.json
+./jira-context.cmd probe-synapse MFD-7754 > jira-synapse-probe.json
 ```
 
 This command targets the plugin base path used in the team docs: `https://avjira/rest/synapse/latest/public/`.
@@ -105,7 +121,7 @@ It now probes the documented TestRay DC test-case resources first, including `/t
 If those plugin probes still do not expose the step grid, inspect the actual Jira browse page HTML for embedded step markup or plugin endpoint clues:
 
 ```text
-python run_cli.py inspect-page MFD-7754 --include-html > jira-issue-page-inspection.json
+./jira-context.cmd inspect-page MFD-7754 --include-html > jira-issue-page-inspection.json
 ```
 
 ### Installed execution
@@ -116,13 +132,56 @@ If you want the `jira-context` command to exist directly in PowerShell, install 
 python -m pip install -e .
 ```
 
-The current MCP server implementation depends on the official `mcp` package and therefore needs a Python version that satisfies that package's published requirements.
-
 Then this form will work:
 
 ```text
 jira-context fetch test-case MFD-1234
 ```
+
+That is the usual packaging shape for CLIs in Python: define a console entry point in `pyproject.toml`, install the package into an environment, and let the installer create a command like `jira-context`.
+For this harness, the checked-in `jira-context.cmd` wrapper is the nicer local path because it preserves the isolated `.venv` without asking people to activate anything first.
+
+### Portable executable build
+
+If you want a deployable Windows executable instead of copying the source tree into the workspace tool folder, build the portable bundle from this repo:
+
+```text
+python build_portable_bundle.py
+```
+
+That single command now does three things from scratch:
+
+1. Installs the build dependency group automatically if PyInstaller is missing.
+2. Builds `jira-context.exe`.
+3. Deploys the tool and skill into `C:/Dev/.github`.
+
+The deploy targets are:
+
+- `C:/Dev/.github/tools/jira-context/`
+- `C:/Dev/.github/skills/jira-context-cli/`
+
+After deployment, the workspace launcher at `C:/Dev/.github/tools/jira-context/jira-context.cmd` will run the executable first.
+
+Because the runtime path logic now detects frozen executables, the deployed `.env`, `.artifacts/tmp/`, and `jira-output/` locations stay rooted next to the `.exe` rather than inside a temporary extraction directory.
+
+The deployed tool folder is intended to be code-free: the builder emits `jira-context.exe`, `jira-context.cmd`, `.artifacts/tmp/`, and `jira-output/` there, and deploys the skill separately.
+
+If you want to build without deploying, use:
+
+```text
+python build_portable_bundle.py --build-only
+```
+
+### What `.[build]` means
+
+The builder may bootstrap dependencies with `python -m pip install .[build]`.
+
+- `.` means "install from the current project directory".
+- `[build]` means "also install the optional dependency group named `build` from `pyproject.toml`".
+
+In this project, that `build` group currently exists to pull in PyInstaller for executable packaging.
+
+The earlier `-e` form meant an editable install, which is useful for development environments but is not necessary for your normal one-command deploy flow.
 
 ### Important gotcha
 
@@ -130,7 +189,7 @@ Do not run `python cli.py ...` from inside `src/jira_context_harness`. That bypa
 
 If your local Python is older than the version originally assumed during scaffolding, package metadata and language features must match that reality. The current scaffold avoids `dataclass(slots=True)` so the launcher path works in older local interpreters.
 
-Another important gotcha is output redirection: onboarding prompts are written to stderr so commands like `python run_cli.py fetch test-case MFD-1234 --view raw > test-case-raw.json` can still create a clean JSON file on stdout.
+Another important gotcha is output redirection: onboarding prompts are written to stderr so commands like `./jira-context.cmd fetch test-case MFD-1234 --include-raw-payload > test-case-normalized.json` can still create a clean JSON file on stdout while the raw trust payload is written separately to `.artifacts/tmp/`.
 
 For internal Jira hosts such as `https://avjira`, the harness may need Jira Server or Data Center REST paths. The current client now tries the common issue endpoint variants automatically, starting with `/rest/api/2` for non-Cloud hosts.
 
@@ -145,52 +204,63 @@ PowerShell `>` redirection can create UTF-16 files. That is readable, but some d
 Fetch normalized JSON:
 
 ```text
-python run_cli.py fetch test-case MFD-1234 > test-case-normalized.json
+./jira-context.cmd fetch test-case MFD-1234 > test-case-normalized.json
 ```
 
-Fetch the raw API response for trust and inspection:
+Fetch normalized JSON and also save the raw payload artifact for trust and inspection:
 
 ```text
-python run_cli.py fetch test-case MFD-1234 --view raw > test-case-raw.json
+./jira-context.cmd fetch test-case MFD-1234 --include-raw-payload > test-case-normalized.json
 ```
 
-Fetch both normalized output and the raw API payload:
+Fetch and name the normalized file and raw artifact explicitly in one command:
 
 ```text
-python run_cli.py fetch test-case MFD-1234 --view both > test-case-both.json
+./jira-context.cmd fetch test-case MFD-1234 --save-normalized-to ./jira-output/MFD-1234-normalized.json --save-raw-payload-to ./.artifacts/tmp/fetch-test-case-MFD-1234-full-raw-payload.json
 ```
 
-For internal Jira test cases, `fetch test-case` also enriches the normalized output with TestRay context from the documented Synapse endpoints, including `test_steps`, `linked_requirements`, `linked_test_suites`, `linked_test_plans`, `defects`, and `ad_hoc_test_runs`. When you use `--view both`, those raw supplemental payloads appear under `supplemental_responses`.
+That raw trust artifact is written automatically to:
+
+```text
+./.artifacts/tmp/fetch-test-case-MFD-1234-full-raw-payload.json
+```
+
+For internal Jira test cases, `fetch test-case` also enriches the normalized output with TestRay context from the documented Synapse endpoints, including `test_steps`, `linked_requirements`, `linked_test_suites`, `linked_test_plans`, `defects`, and `ad_hoc_test_runs`. When you use `--include-raw-payload`, the raw Jira issue payload and raw supplemental payloads are stored together in the hidden artifact file.
+
+The `.artifacts/tmp/` directory is the common local-workspace pattern here: it is git-ignored, predictable, and meant for throwaway trust artifacts. It is not truly hidden at the Windows filesystem level, but the dot-folder naming keeps it out of the main repo surface. Right now these artifact files use stable names and overwrite the previous fetch for the same issue and section, so the folder does not grow forever even without a cleanup command.
+
+The raw artifact is sanitized before it is written. Keys named `avatarUrls` are stripped recursively from Jira and Synapse payloads so that avatar links never appear in normalized output, raw fetch artifacts, or raw-included reports.
 
 The normalized `test_steps` and ad hoc run `steps` use stable keys such as `step_number`, `step_text`, `step_raw`, `step_html`, `expected_result_text`, `expected_result_raw`, `expected_result_html`, `requirement_keys`, and `attachments`, so the agent can consume a predictable schema while you still retain the raw plugin response for trust.
 
 If you want only the part you care about, use `--section` on `fetch`:
 
 ```text
-python run_cli.py fetch test-case MFD-7754 --section authored-steps
-python run_cli.py fetch test-case MFD-7754 --section ad-hoc-runs
-python run_cli.py fetch test-case MFD-7754 --section merged-steps
+./jira-context.cmd fetch test-case MFD-7754 --section authored-steps
+./jira-context.cmd fetch test-case MFD-7754 --section ad-hoc-runs
+./jira-context.cmd fetch test-case MFD-7754 --section comments
 ```
 
-The `merged-steps` section keeps the authored test-case step text as the primary source, then overlays the latest ad hoc run status, actual result, attachments, and richer rendered HTML when it is available from the execution record.
+The CLI now keeps these sections pure: `authored-steps` returns the current test-case steps, `ad-hoc-runs` returns ad hoc execution records, `comments` returns comments, and `links` returns linked issues.
 
-To start the MCP server for agent use:
+If you add `--include-raw-payload` to a sectioned fetch, stdout still contains only the normalized section you asked for, and the matching raw section payload is written to `.artifacts/tmp/`.
+
+The `comments` section is already useful for narrative issue history such as reviewer notes, bug discovery notes, repro confirmations, requirement-ID update notes, and sub-task keys mentioned in comments. It does not currently include Jira changelog events such as every status transition or field edit.
+
+The normalized `links` section now carries linked issue semantics such as `issue_kind`, `issue_type`, `status`, and `priority`, which makes linked problem reports easier to reason about without a second fetch.
+
+If you want to fetch a linked problem report directly, use the dedicated issue kind:
 
 ```text
-python run_cli.py serve-mcp
+./jira-context.cmd fetch problem-report MFD-8100 --include-raw-payload
 ```
 
-The initial MCP tool surface is:
-
-```text
-get_test_case(issue_key, section="full", include_raw=false)
-get_requirement(issue_key, include_raw=false)
-```
-
-For `get_test_case`, the `section` values match the CLI fetch sections, including `authored-steps`, `ad-hoc-runs`, and `merged-steps`.
+The active workspace skill lives at `C:/Dev/.github/skills/jira-context-cli/`.
+This repository also keeps a mirror copy at `.github/skills/jira-context-cli/` so skill revisions can stay with the harness.
+Until the workflow is finalized, keep both copies synchronized when the skill changes.
 
 Render a quick human-readable summary:
 
 ```text
-python run_cli.py fetch test-case MFD-1234 --format text
+./jira-context.cmd fetch test-case MFD-1234 --format text
 ```
