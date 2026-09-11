@@ -1,0 +1,5 @@
+.env
+.artifacts/tmp/*
+!.artifacts/tmp/.gitkeep
+jira-output/*
+!jira-output/README.txt

@@ -181,6 +181,35 @@ If you want to build without deploying, use:
 python build_portable_bundle.py --build-only
 ```
 
+## CI build and distribution
+
+The repository now includes a GitHub Actions workflow at `.github/workflows/build-portable-bundle.yml` that builds the Windows portable bundle on GitHub-hosted runners.
+
+The workflow triggers on:
+
+1. Manual runs through `workflow_dispatch`
+2. Pushes to `main`
+3. Tags that start with `v`
+
+What it produces:
+
+1. Builds `jira-context.exe` with PyInstaller on `windows-latest`
+2. Stages a workspace-ready folder layout containing:
+	- `.github/tools/jira-context/...`
+	- `.github/skills/jira-context-cli/...`
+3. Uploads a zip artifact named `jira-context-workspace-bundle-<ref>`
+
+That zip is the teammate-facing deliverable. They should not need to clone this repo or run the build locally.
+
+Recommended internal GitHub flow:
+
+1. Push this repo to your internal GitHub remote.
+2. Open the Actions tab and run `Build Portable Bundle`, or push a `v*` tag.
+3. Download the uploaded artifact zip from the workflow run.
+4. Extract it at the target workspace root so the `.github` folder lands in place.
+
+For a cleaner teammate experience later, you can add a release workflow that publishes the same zip as a release asset and pair it with a one-command PowerShell installer.
+
 ### What `.[build]` means
 
 The builder may bootstrap dependencies with `python -m pip install .[build]`.

@@ -1,0 +1,66 @@
+name: Build Portable Bundle
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-bundle:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[build]"
+
+      - name: Build portable bundle
+        shell: pwsh
+        run: |
+          python build_portable_bundle.py --build-only --no-bootstrap-build-tools
+
+      - name: Stage workspace-ready bundle
+        shell: pwsh
+        run: |
+          $stageRoot = Join-Path $PWD ".release/workspace-bundle"
+          $toolRoot = Join-Path $stageRoot ".github/tools/jira-context"
+          $skillRoot = Join-Path $stageRoot ".github/skills/jira-context-cli"
+
+          Remove-Item $stageRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $toolRoot -Force | Out-Null
+          New-Item -ItemType Directory -Path $skillRoot -Force | Out-Null
+
+          Copy-Item "dist/jira-context-portable/bundle/*" $toolRoot -Recurse -Force
+          Copy-Item ".github/skills/jira-context-cli/*" $skillRoot -Recurse -Force
+
+      - name: Archive workspace-ready bundle
+        shell: pwsh
+        run: |
+          $artifactRoot = Join-Path $PWD ".release"
+          $archivePath = Join-Path $artifactRoot "jira-context-workspace-bundle-${{ github.ref_name }}.zip"
+
+          Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path ".release/workspace-bundle/*" -DestinationPath $archivePath
+
+      - name: Upload workspace-ready artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jira-context-workspace-bundle-${{ github.ref_name }}
+          path: .release/jira-context-workspace-bundle-${{ github.ref_name }}.zip
+          if-no-files-found: error
