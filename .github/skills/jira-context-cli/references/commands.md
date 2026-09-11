@@ -3,7 +3,7 @@
 All commands in this skill use the isolated harness runtime:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd
+<workspace-root>/.github/tools/jira-context/jira-context.exe
 ```
 
 This file is for normal day-to-day CLI usage.
@@ -14,40 +14,47 @@ Debugging and development-only commands live in [debugging.md](./debugging.md).
 Default agent fetch with no artifact side effects:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch test-case MFD-7754
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754
+```
+
+If the normalized payload may be large, save it directly from the CLI and read that file first:
+
+```powershell
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json
 ```
 
 Fetch normalized test-case JSON and also save the raw trust payload to the hidden artifact folder:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch test-case MFD-7754 --include-raw-payload | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/MFD-7754-normalized.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-test-case-MFD-7754-full-raw-payload.json
 ```
 
 Fetch and name the normalized file and raw artifact explicitly in one command:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch test-case MFD-7754 --save-normalized-to C:/Dev/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to C:/Dev/.github/tools/jira-context/.artifacts/tmp/fetch-test-case-MFD-7754-full-raw-payload.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-test-case-MFD-7754-full-raw-payload.json
 ```
 
 The raw trust artifact for that command is written automatically to:
 
 ```text
-C:/Dev/.github/tools/jira-context/.artifacts/tmp/fetch-test-case-MFD-7754-full-raw-payload.json
+<workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-test-case-MFD-7754-full-raw-payload.json
 ```
 
-The normalized file is what the agent should read first. The raw artifact is only for trust checks and source-payload inspection.
+The normalized file is what the agent should read first. Access the stable keys directly from that JSON before doing any generic text processing.
+The raw artifact is only for trust checks and source-payload inspection when the schema is genuinely unknown or the user explicitly asks for it.
 Do not place runtime JSON payloads inside `.github/skills/`; keep them under the harness runtime area instead.
 
 Fetch normalized requirement JSON and also save the raw trust payload:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch requirement DMFDREQ-1448 --include-raw-payload | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/DMFDREQ-1448-normalized.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch requirement DMFDREQ-1448 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/DMFDREQ-1448-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-requirement-DMFDREQ-1448-full-raw-payload.json
 ```
 
 Fetch normalized problem-report JSON and also save the raw trust payload:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch problem-report MFD-8100 --include-raw-payload | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/MFD-8100-normalized.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch problem-report MFD-8100 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-8100-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-problem-report-MFD-8100-full-raw-payload.json
 ```
 
 ## Advanced Fetch Options
@@ -77,29 +84,29 @@ Most users should ignore these unless they are intentionally widening the Jira A
 Issue links:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch test-case MFD-7754 --section links --include-raw-payload | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/MFD-7754-links.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --section links --include-raw-payload | Out-File -Encoding utf8 <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-links.json
 ```
 
 Comment history:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch test-case MFD-7754 --section comments --include-raw-payload | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/MFD-7754-comments.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --section comments --include-raw-payload | Out-File -Encoding utf8 <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-comments.json
 ```
 
 Authored test steps:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch test-case MFD-7754 --section authored-steps --include-raw-payload | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/MFD-7754-authored-steps.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --section authored-steps --include-raw-payload | Out-File -Encoding utf8 <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-authored-steps.json
 ```
 
 Ad hoc test runs:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch test-case MFD-7754 --section ad-hoc-runs --include-raw-payload | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/MFD-7754-ad-hoc-runs.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --section ad-hoc-runs --include-raw-payload | Out-File -Encoding utf8 <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-ad-hoc-runs.json
 ```
 
 Full test-management payload:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd fetch test-case MFD-7754 --section test-management --include-raw-payload | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/MFD-7754-test-management.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --section test-management --include-raw-payload | Out-File -Encoding utf8 <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-test-management.json
 ```

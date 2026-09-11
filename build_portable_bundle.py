@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DIST_ROOT = PROJECT_ROOT / "dist" / "jira-context-portable"
 BUILD_ROOT = PROJECT_ROOT / "build" / "pyinstaller"
 SOURCE_SKILL_ROOT = PROJECT_ROOT / ".github" / "skills" / "jira-context-cli"
-DEPLOY_ROOT = Path("C:/Dev/.github")
+DEFAULT_DEPLOY_ROOT = Path("C:/Dev/.github")
 
 DEPLOYED_TOOL_README = """# jira-context Portable Runtime
 
@@ -24,26 +24,10 @@ The preferred deployed shape is a compiled `jira-context.exe` plus this folder's
 
 ## Runtime contract
 
-- Run `jira-context.cmd` from this folder.
-- The launcher expects `jira-context.exe` to be present in this folder.
+- Run `jira-context.exe` from this folder.
 - Configuration is stored in `.env` in this folder.
 - Raw trust artifacts are written to `.artifacts/tmp/` in this folder.
 - User-visible saved JSON files can go in `jira-output/` in this folder.
-"""
-
-DEPLOYED_TOOL_LAUNCHER = """@echo off
-setlocal
-
-set "SCRIPT_DIR=%~dp0"
-
-if exist "%SCRIPT_DIR%jira-context.exe" (
-    "%SCRIPT_DIR%jira-context.exe" %*
-    exit /b %errorlevel%
-)
-
-echo jira-context.exe is missing from this deployed bundle. 1>&2
-echo Rebuild and redeploy it from the source repository with `python build_portable_bundle.py`. 1>&2
-exit /b 1
 """
 
 DEPLOYED_TOOL_GITIGNORE = """.env
@@ -60,12 +44,23 @@ DEPLOYED_JIRA_OUTPUT_README = (
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build and deploy the portable jira-context executable bundle into C:/Dev/.github.",
+        description="Build and deploy the portable jira-context executable bundle into a workspace .github folder.",
+    )
+    deploy_target_group = parser.add_mutually_exclusive_group()
+    deploy_target_group.add_argument(
+        "--deploy-root",
+        type=Path,
+        help="Destination .github directory. Defaults to C:/Dev/.github.",
+    )
+    deploy_target_group.add_argument(
+        "--workspace-root",
+        type=Path,
+        help="Workspace root that should receive the deployed .github/tool and .github/skills content.",
     )
     parser.add_argument(
         "--build-only",
         action="store_true",
-        help="Build the portable bundle but do not deploy it into C:/Dev/.github.",
+        help="Build the portable bundle but do not deploy it.",
     )
     parser.add_argument(
         "--no-bootstrap-build-tools",
@@ -78,6 +73,16 @@ def _parse_args() -> argparse.Namespace:
         help="Keep any existing dist/build folders instead of deleting them first.",
     )
     return parser.parse_args()
+
+
+def _resolve_deploy_root(args: argparse.Namespace) -> Path:
+    if args.workspace_root is not None:
+        return (args.workspace_root / ".github").resolve()
+
+    if args.deploy_root is not None:
+        return args.deploy_root.resolve()
+
+    return DEFAULT_DEPLOY_ROOT
 
 
 def _ensure_build_tools(*, allow_bootstrap: bool) -> None:
@@ -160,7 +165,6 @@ def _assemble_bundle() -> Path:
         raise SystemExit(f"Expected PyInstaller output was not found: {built_exe}")
 
     _copy_file(built_exe, bundle_root / "jira-context.exe")
-    _write_file(bundle_root / "jira-context.cmd", DEPLOYED_TOOL_LAUNCHER)
     _write_file(bundle_root / ".gitignore", DEPLOYED_TOOL_GITIGNORE)
     _write_file(bundle_root / "README.md", DEPLOYED_TOOL_README)
     _write_file(bundle_root / ".artifacts" / "tmp" / ".gitkeep", "keep\n")
@@ -191,6 +195,7 @@ def _deploy_skill(deploy_root: Path) -> list[Path]:
 
 def main() -> int:
     args = _parse_args()
+    deploy_root = _resolve_deploy_root(args)
     _reset_output(keep_dist=args.keep_dist)
     _ensure_build_tools(allow_bootstrap=not args.no_bootstrap_build_tools)
     _run_pyinstaller()
@@ -198,8 +203,8 @@ def main() -> int:
     print(f"Built portable bundle at {bundle_root}")
 
     if not args.build_only:
-        tool_destination = _deploy_bundle(bundle_root, DEPLOY_ROOT)
-        skill_destinations = _deploy_skill(DEPLOY_ROOT)
+        tool_destination = _deploy_bundle(bundle_root, deploy_root)
+        skill_destinations = _deploy_skill(deploy_root)
         print(f"Deployed portable bundle to {tool_destination}")
         for destination in skill_destinations:
             print(f"Deployed skill to {destination}")

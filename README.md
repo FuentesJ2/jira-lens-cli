@@ -146,25 +146,34 @@ For this harness, the checked-in `jira-context.cmd` wrapper is the nicer local p
 If you want a deployable Windows executable instead of copying the source tree into the workspace tool folder, build the portable bundle from this repo:
 
 ```text
-python build_portable_bundle.py
+python build_portable_bundle.py --workspace-root C:/path/to/other/workspace
 ```
 
 That single command now does three things from scratch:
 
 1. Installs the build dependency group automatically if PyInstaller is missing.
 2. Builds `jira-context.exe`.
-3. Deploys the tool and skill into `C:/Dev/.github`.
+3. Deploys the tool and skill into the target workspace `.github` folder.
+
+If you omit the deploy target flags, the default destination remains `C:/Dev/.github`.
+
+You can target either form explicitly:
+
+```text
+python build_portable_bundle.py --workspace-root C:/path/to/other/workspace
+python build_portable_bundle.py --deploy-root C:/path/to/other/workspace/.github
+```
 
 The deploy targets are:
 
-- `C:/Dev/.github/tools/jira-context/`
-- `C:/Dev/.github/skills/jira-context-cli/`
+- `C:/path/to/other/workspace/.github/tools/jira-context/`
+- `C:/path/to/other/workspace/.github/skills/jira-context-cli/`
 
-After deployment, the workspace launcher at `C:/Dev/.github/tools/jira-context/jira-context.cmd` will run the executable first.
+After deployment, run `C:/path/to/other/workspace/.github/tools/jira-context/jira-context.exe` directly.
 
 Because the runtime path logic now detects frozen executables, the deployed `.env`, `.artifacts/tmp/`, and `jira-output/` locations stay rooted next to the `.exe` rather than inside a temporary extraction directory.
 
-The deployed tool folder is intended to be code-free: the builder emits `jira-context.exe`, `jira-context.cmd`, `.artifacts/tmp/`, and `jira-output/` there, and deploys the skill separately.
+The deployed tool folder is intended to be code-free: the builder emits `jira-context.exe`, `.artifacts/tmp/`, and `jira-output/` there, and deploys the skill separately.
 
 If you want to build without deploying, use:
 
@@ -255,7 +264,7 @@ If you want to fetch a linked problem report directly, use the dedicated issue k
 ./jira-context.cmd fetch problem-report MFD-8100 --include-raw-payload
 ```
 
-The active workspace skill lives at `C:/Dev/.github/skills/jira-context-cli/`.
+The active workspace skill lives under the deployed workspace `.github/skills/jira-context-cli/` folder.
 This repository also keeps a mirror copy at `.github/skills/jira-context-cli/` so skill revisions can stay with the harness.
 Until the workflow is finalized, keep both copies synchronized when the skill changes.
 

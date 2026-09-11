@@ -7,7 +7,7 @@ Use this file only when the normal fetch workflow is failing, the Jira/TestRay s
 Probe Jira authentication:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd probe-auth | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/jira-auth-probe.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe probe-auth | Out-File -Encoding utf8 <workspace-root>/.github/tools/jira-context/jira-output/jira-auth-probe.json
 ```
 
 ## Schema Discovery
@@ -15,13 +15,13 @@ C:/Dev/.github/tools/jira-context/jira-context.cmd probe-auth | Out-File -Encodi
 Inspect interesting Jira fields:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd discover-fields MFD-7754 --include-raw | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/jira-field-discovery.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe discover-fields MFD-7754 --include-raw | Out-File -Encoding utf8 <workspace-root>/.github/tools/jira-context/jira-output/jira-field-discovery.json
 ```
 
 Inspect Jira browse-page HTML clues:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd inspect-page MFD-7754 --include-html | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/jira-issue-page-inspection.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe inspect-page MFD-7754 --include-html | Out-File -Encoding utf8 <workspace-root>/.github/tools/jira-context/jira-output/jira-issue-page-inspection.json
 ```
 
 ## TestRay Or Synapse Probing
@@ -29,7 +29,7 @@ C:/Dev/.github/tools/jira-context/jira-context.cmd inspect-page MFD-7754 --inclu
 Probe documented Synapse or TestRay endpoints:
 
 ```powershell
-C:/Dev/.github/tools/jira-context/jira-context.cmd probe-synapse MFD-7754 | Out-File -Encoding utf8 C:/Dev/.github/tools/jira-context/jira-output/jira-synapse-probe.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe probe-synapse MFD-7754 | Out-File -Encoding utf8 <workspace-root>/.github/tools/jira-context/jira-output/jira-synapse-probe.json
 ```
 
 ## Local Environment Recovery
