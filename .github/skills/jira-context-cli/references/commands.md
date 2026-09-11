@@ -11,6 +11,14 @@ Debugging and development-only commands live in [debugging.md](./debugging.md).
 
 ## Full Fetches
 
+If you need a clear, single-command pattern, use this exact shape with no wrapper logic around it:
+
+```powershell
+C:/Dev/.github/tools/jira-context/jira-context.exe fetch test-case MFD-9212 --save-normalized-to C:/Dev/.github/tools/jira-context/jira-output/MFD-9212-normalized.json
+```
+
+Ask to run or approve the direct fetch command itself. Do not generate a PowerShell wrapper that captures stdout, branches between issue kinds, checks file creation, or prints sentinel markers.
+
 Default agent fetch with no artifact side effects:
 
 ```powershell
@@ -24,12 +32,6 @@ If the normalized payload may be large, save it directly from the CLI and read t
 ```
 
 Fetch normalized test-case JSON and also save the raw payload JSON in `jira-output/`:
-
-```powershell
-<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/jira-output/fetch-test-case-MFD-7754-full-raw-payload.json
-```
-
-Fetch and name the normalized file and raw payload file explicitly in one command:
 
 ```powershell
 <workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/jira-output/fetch-test-case-MFD-7754-full-raw-payload.json
@@ -49,6 +51,7 @@ When the Tessie or MFD Test Script Agent workflow is active, still fetch live Ji
 The saved raw payload file is only for source-payload inspection when the schema is genuinely unknown or the user explicitly asks for it.
 Use `jira-output/` for both normalized and raw saved JSON outputs.
 Do not place runtime JSON payloads inside `.github/skills/`; keep them under the harness runtime area instead.
+If you are unsure whether an issue is a `test-case` or `problem-report`, either ask the user or run one direct fetch at a time. Do not combine both attempts into a generated PowerShell control-flow script.
 
 Fetch normalized requirement JSON and also save the raw payload JSON:
 
