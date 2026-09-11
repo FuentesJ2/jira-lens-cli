@@ -56,6 +56,7 @@ DEFAULT_SEARCH_FIELDS = [
 RAW_PAYLOAD_ARTIFACT_DIR = raw_payload_artifact_dir()
 VALID_FETCH_VIEWS = {"normalized", "raw", "combined"}
 LEGACY_FETCH_VIEW_ALIASES = {"both": "combined"}
+SEARCH_PERSON_MODES = {"current", "history", "current-or-history"}
 
 
 def _default_fields_for(issue_kind: str) -> list[str]:
@@ -80,6 +81,23 @@ def _artifact_slug(value: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
     slug = slug.strip("-.")
     return slug or "unknown"
+
+
+def _escape_jql_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _build_person_search_jql(display_name: str, mode: str) -> str:
+    escaped_name = _escape_jql_string(display_name.strip())
+    literal = f'"{escaped_name}"'
+
+    if mode == "current":
+        return f"assignee = {literal} ORDER BY updated DESC"
+    if mode == "history":
+        return f"assignee WAS {literal} ORDER BY updated DESC"
+    if mode == "current-or-history":
+        return f"assignee = {literal} OR assignee WAS {literal} ORDER BY updated DESC"
+    raise ValueError(f"Unsupported person search mode: {mode}")
 
 
 def _write_json_file(path: Path, payload: object) -> Path:
@@ -188,8 +206,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a JQL search and save a normalized issue list for downstream analysis.",
     )
     search_parser.add_argument(
+        "search_target",
+        nargs="?",
+        choices=["person"],
+        help="Optional friendly search target. Use `person` to generate JQL from a display name.",
+    )
+    search_parser.add_argument(
+        "search_value",
+        nargs="?",
+        help="Value for the friendly search target, such as a Jira display name.",
+    )
+    search_parser.add_argument(
         "--jql",
-        required=True,
         help="JQL expression to execute.",
     )
     search_parser.add_argument(
@@ -215,6 +243,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="fields",
         default=None,
         help="Additional Jira search field to request. Can be passed multiple times.",
+    )
+    search_parser.add_argument(
+        "--mode",
+        choices=sorted(SEARCH_PERSON_MODES),
+        default=None,
+        help="Friendly search mode for `search person`. Defaults to current.",
     )
     search_parser.add_argument(
         "--fields-by-keys",
@@ -593,12 +627,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.start_at < 0:
             parser.error("--start-at must be 0 or greater")
 
+        if args.search_target == "person":
+            if not args.search_value:
+                parser.error("search person requires a display name")
+            if args.jql:
+                parser.error("--jql cannot be combined with search person")
+            search_mode = args.mode or "current"
+            jql = _build_person_search_jql(args.search_value, search_mode)
+        else:
+            if args.mode is not None:
+                parser.error("--mode is only valid with search person")
+            if not args.jql:
+                parser.error("search requires either --jql or `search person <display-name>`")
+            search_mode = "raw-jql"
+            jql = args.jql
+
         request_model = SearchRequest(
-            jql=args.jql,
+            jql=jql,
             fields=_default_search_fields() + (args.fields or []),
             start_at=args.start_at,
             max_results=args.limit,
             fields_by_keys=args.fields_by_keys,
+            mode=search_mode,
         )
         try:
             settings = _resolve_settings(

@@ -69,6 +69,12 @@ Or run a saved JQL search:
 .\.github\tools\jira-context\jira-context.exe search --jql "assignee = \"Dustin Marek\" ORDER BY updated DESC" --save-normalized-to .\.github\tools\jira-context\jira-output\dustin-marek-search.json
 ```
 
+Or use the friendly person-search wrapper:
+
+```powershell
+.\.github\tools\jira-context\jira-context.exe search person "Dustin Marek" --mode current-or-history --save-normalized-to .\.github\tools\jira-context\jira-output\dustin-marek-history.json
+```
+
 If Jira settings are missing, the CLI will prompt once, save them locally, and retry the fetch automatically.
 
 ## CLI usage
@@ -109,6 +115,20 @@ Raw JQL search example:
 
 ```text
 ./jira-context.cmd search --jql "assignee = \"Dustin Marek\" ORDER BY updated DESC" --save-normalized-to ./jira-output/dustin-marek-search.json
+```
+
+Friendly person-search examples:
+
+```text
+./jira-context.cmd search person "Dustin Marek" --save-normalized-to ./jira-output/dustin-marek-current.json
+```
+
+```text
+./jira-context.cmd search person "Dustin Marek" --mode history --save-normalized-to ./jira-output/dustin-marek-history.json
+```
+
+```text
+./jira-context.cmd search person "Dustin Marek" --mode current-or-history --save-normalized-to ./jira-output/dustin-marek-current-or-history.json
 ```
 
 On first run, if required Jira settings are missing, the CLI will prompt for them interactively, save them to a local `.env` file in the project root, and then retry the same fetch command.

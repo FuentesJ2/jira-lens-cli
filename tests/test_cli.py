@@ -123,6 +123,24 @@ class BuildParserTests(unittest.TestCase):
         self.assertEqual(args.limit, 5)
         self.assertEqual(args.start_at, 10)
 
+    def test_search_person_is_registered(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([
+            "search",
+            "person",
+            "Dustin Marek",
+            "--mode",
+            "history",
+            "--save-normalized-to",
+            "C:/tmp/dustin-marek-history.json",
+        ])
+
+        self.assertEqual(args.command, "search")
+        self.assertEqual(args.search_target, "person")
+        self.assertEqual(args.search_value, "Dustin Marek")
+        self.assertEqual(args.mode, "history")
+        self.assertIsNone(args.jql)
+
     def test_search_requires_save_path(self) -> None:
         parser = build_parser()
 
@@ -134,6 +152,18 @@ class BuildParserTests(unittest.TestCase):
             ])
 
         self.assertEqual(exit_context.exception.code, 2)
+
+    def test_search_person_defaults_to_current_mode(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([
+            "search",
+            "person",
+            "Dustin Marek",
+            "--save-normalized-to",
+            "C:/tmp/dustin-marek-current.json",
+        ])
+
+        self.assertIsNone(args.mode)
 
     def test_configure_is_registered(self) -> None:
         parser = build_parser()
@@ -481,8 +511,9 @@ class CliOutputTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("Saved normalized output to C:/tmp/MFD-1234-normalized.json", stderr.getvalue())
-        self.assertIn("Saved raw payload JSON to C:/tmp/MFD-1234-raw.json", stderr.getvalue())
+        normalized_stderr = stderr.getvalue().replace("\\", "/")
+        self.assertIn("Saved normalized output to C:/tmp/MFD-1234-normalized.json", normalized_stderr)
+        self.assertIn("Saved raw payload JSON to C:/tmp/MFD-1234-raw.json", normalized_stderr)
         raw_mock.assert_called_once()
         json_mock.assert_called_once()
 
@@ -531,7 +562,10 @@ class CliOutputTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("Saved normalized output to C:/tmp/MFD-1234-normalized.json", stderr.getvalue())
+        self.assertIn(
+            "Saved normalized output to C:/tmp/MFD-1234-normalized.json",
+            stderr.getvalue().replace("\\", "/"),
+        )
         json_mock.assert_called_once()
 
     def test_main_search_writes_named_normalized_output_and_suppresses_stdout(self) -> None:
@@ -584,9 +618,136 @@ class CliOutputTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("Saved normalized output to C:/tmp/dustin-marek-search.json", stderr.getvalue())
+        self.assertIn(
+            "Saved normalized output to C:/tmp/dustin-marek-search.json",
+            stderr.getvalue().replace("\\", "/"),
+        )
         jira_client_mock.return_value.search_issues.assert_called_once()
         json_mock.assert_called_once()
+
+    def test_main_search_person_builds_current_query_and_saves_output(self) -> None:
+        result = JiraSearchResult(
+            query='assignee = "Dustin Marek" ORDER BY updated DESC',
+            mode="current",
+            total=1,
+            returned=1,
+            start_at=0,
+            max_results=10,
+            issues=[
+                JiraSearchIssue(
+                    issue_key="MFD-9212",
+                    summary="Summary",
+                    status="In Progress",
+                    issue_type="Problem Report",
+                    project_key="MFD",
+                    assignee="Dustin Marek",
+                    reporter="Delta User",
+                    updated="2026-09-11T12:34:56.000+0000",
+                    source_url="https://avjira/browse/MFD-9212",
+                )
+            ],
+        )
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://example.atlassian.net",
+                user_email="user@example.com",
+                password="password",
+                api_token="token",
+                project_scope="MFD",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.search_issues.return_value = result
+                with patch(
+                    "jira_context_harness.cli._write_json_file",
+                    return_value=Path("C:/tmp/dustin-marek-current.json"),
+                ) as json_mock:
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                        exit_code = main([
+                            "search",
+                            "person",
+                            "Dustin Marek",
+                            "--save-normalized-to",
+                            "C:/tmp/dustin-marek-current.json",
+                        ])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn(
+            "Saved normalized output to C:/tmp/dustin-marek-current.json",
+            stderr.getvalue().replace("\\", "/"),
+        )
+        request_model = jira_client_mock.return_value.search_issues.call_args.args[0]
+        self.assertEqual(request_model.mode, "current")
+        self.assertEqual(request_model.jql, 'assignee = "Dustin Marek" ORDER BY updated DESC')
+        json_mock.assert_called_once()
+
+    def test_main_search_person_builds_current_or_history_query(self) -> None:
+        result = JiraSearchResult(
+            query='assignee = "Dustin Marek" OR assignee WAS "Dustin Marek" ORDER BY updated DESC',
+            mode="current-or-history",
+            total=0,
+            returned=0,
+            start_at=0,
+            max_results=10,
+            issues=[],
+        )
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://example.atlassian.net",
+                user_email="user@example.com",
+                password="password",
+                api_token="token",
+                project_scope="MFD",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.search_issues.return_value = result
+                with patch(
+                    "jira_context_harness.cli._write_json_file",
+                    return_value=Path("C:/tmp/dustin-marek-history.json"),
+                ):
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                        exit_code = main([
+                            "search",
+                            "person",
+                            "Dustin Marek",
+                            "--mode",
+                            "current-or-history",
+                            "--save-normalized-to",
+                            "C:/tmp/dustin-marek-history.json",
+                        ])
+
+        self.assertEqual(exit_code, 0)
+        request_model = jira_client_mock.return_value.search_issues.call_args.args[0]
+        self.assertEqual(request_model.mode, "current-or-history")
+        self.assertEqual(
+            request_model.jql,
+            'assignee = "Dustin Marek" OR assignee WAS "Dustin Marek" ORDER BY updated DESC',
+        )
+        self.assertEqual(stdout.getvalue(), "")
+
+    def test_main_search_rejects_mode_without_person(self) -> None:
+        stderr = io.StringIO()
+
+        with patch("sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as exit_context:
+                main([
+                    "search",
+                    "--jql",
+                    'assignee = "Dustin Marek" ORDER BY updated DESC',
+                    "--mode",
+                    "history",
+                    "--save-normalized-to",
+                    "C:/tmp/dustin-marek-search.json",
+                ])
+
+        self.assertEqual(exit_context.exception.code, 2)
+        self.assertIn("--mode is only valid with search person", stderr.getvalue())
 
     def test_main_save_normalized_to_rejects_raw_view(self) -> None:
         stderr = io.StringIO()

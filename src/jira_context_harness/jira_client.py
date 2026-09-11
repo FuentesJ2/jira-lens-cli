@@ -63,6 +63,7 @@ class SearchRequest:
     start_at: int = 0
     max_results: int = 10
     fields_by_keys: bool = False
+    mode: str = "raw-jql"
 
 
 @dataclass
@@ -612,7 +613,7 @@ class JiraClient:
         ]
         return JiraSearchResult(
             query=request_model.jql,
-            mode="raw-jql",
+            mode=request_model.mode,
             total=_int_value(response_payload.get("total"), default=len(issues)),
             returned=len(issues),
             start_at=_int_value(response_payload.get("startAt"), default=request_model.start_at),
