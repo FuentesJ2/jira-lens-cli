@@ -90,10 +90,10 @@ This is the most reliable local validation path because it does not depend on `p
 
 The checked-in `jira-context.cmd` wrapper now prefers a sibling `jira-context.exe` when one exists. If no executable is present, it falls back to Python source execution.
 
-For `fetch`, stdout is the agent-facing payload. That should stay small and cleaned up.
-Normal `fetch` should not create any background artifact files.
-If you also want the original raw payload JSON, use `--include-raw-payload`; the CLI will write that raw material to `jira-output/` and keep stdout normalized.
-If you want the file destinations to be explicit in one command, use `--save-normalized-to` and `--save-raw-payload-to`.
+For agent-driven `fetch`, the canonical payload should be a saved normalized JSON file created with `--save-normalized-to`.
+After the fetch completes, open that saved normalized JSON file directly instead of re-reading terminal output.
+If you also want the original raw payload JSON, use `--include-raw-payload` or `--save-raw-payload-to`; keep the raw payload on disk unless it is needed.
+Do not treat Copilot chat-session transcript files or temporary terminal capture files as the primary artifact when the normalized JSON file already exists.
 Keep runtime payload files under the harness root, not inside `.github/skills/`, so the skill content remains shareable and version-controlled without artifact churn.
 
 On first run, if required Jira settings are missing, the CLI will prompt for them interactively, save them to a local `.env` file in the project root, and then retry the same fetch command.

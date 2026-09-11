@@ -21,10 +21,11 @@ Keep the deployed copy synchronized with this source file.
 - If the current session cannot execute commands, stop immediately and report that the CLI cannot be run from this session.
 - When execution is unavailable, do not search for MCP configs, VS Code tasks, command bridges, or workspace wrappers as a fallback.
 - Write machine-readable output with `Out-File -Encoding utf8` instead of `>` when saving JSON.
-- For `fetch`, the agent-facing payload should stay normalized and small.
+- For `fetch`, the canonical agent-facing payload is the saved normalized JSON file on disk, not terminal stdout.
 - Do not create runtime JSON files inside `.github/skills/`. Keep persisted normalized and raw JSON outputs under the target workspace `.github/tools/jira-context/jira-output/` folder or an explicit user-provided save path.
 - When requesting permission to run a Jira CLI command, ask for approval on the exact `jira-context.exe ...` command only. Do not generate PowerShell wrapper functions, pre/post directory scans, file-diff scaffolding, or other validation scripts unless the user explicitly asked for that deeper validation.
 - Never wrap a Jira fetch in a one-off PowerShell program that captures stdout, tracks `$LASTEXITCODE`, probes file existence, or prints sentinel blocks such as `RESULT_START`, `FIRST_OUTPUT_START`, or `SECOND_OUTPUT_START`.
+- If `--save-normalized-to` was used or should be used, do not inspect terminal transcript files such as Copilot chat `content.txt` resources. Open the saved normalized JSON file directly.
 
 ## Direct Command Shape
 Ask to run or approve one direct CLI command in this shape and nothing around it:
@@ -42,6 +43,7 @@ C:/Dev/.github/tools/jira-context/jira-context.exe fetch test-case MFD-9212 --sa
 - Do not prepend `$exe=...`, argument arrays, `Out-String`, `Test-Path`, `$LASTEXITCODE`, or sentinel markers.
 - Do not bundle `test-case` and `problem-report` fallback attempts into one generated PowerShell script.
 - If the issue kind is uncertain, ask the user or run one direct fetch at a time.
+- Always include `--save-normalized-to` for agent-driven Jira fetches.
 
 ## Working With Tessie
 - When this skill and the Tessie or MFD Test Script Agent workflow are both relevant, this skill owns live Jira and TestRay retrieval and Tessie owns downstream test-case or script generation.
@@ -53,11 +55,11 @@ C:/Dev/.github/tools/jira-context/jira-context.exe fetch test-case MFD-9212 --sa
 
 ## Core Flow
 1. Determine the issue kind: use `test-case` for MFD test cases, `requirement` for requirement issues such as `DMFDREQ-1448`, and `problem-report` for linked bug or problem-report issues.
-2. For a small or focused fetch, run the direct CLI command normally and treat stdout as the normalized payload.
-3. If the payload may be large, use `--save-normalized-to` immediately so the CLI writes the normalized JSON intentionally to `jira-output/`.
-4. If `--save-normalized-to` was used, read that saved normalized JSON file before any repo, code, or test search.
+2. Always run fetches with `--save-normalized-to` so the CLI writes the normalized JSON intentionally to `jira-output/` or a user-provided path.
+3. After the fetch completes, open the saved normalized JSON file directly before any repo, code, or test search.
+4. Do not treat terminal stdout, PowerShell transcript output, or Copilot chat-session resource files as the primary payload when the saved normalized JSON file exists.
 5. When summarizing from normalized JSON, name the exact stable keys you used instead of generic text-search.
-6. If the first fetch is a `test-case`, inspect the currently linked requirements before finishing the initial analysis unless the user asked to stay on the test case only.
+6. If the first fetch is a `test-case`, inspect the currently linked requirements from that saved normalized JSON before finishing the initial analysis unless the user asked to stay on the test case only.
 7. If the user wants raw source payload JSON too, add `--include-raw-payload` or `--save-raw-payload-to`, but keep raw payloads on disk unless they are needed.
 8. When the user asks for a specific slice, prefer `--section` over a full dump.
 9. If the CLI fails or the Jira/TestRay shape is unclear, use the troubleshooting commands in [debugging reference](./references/debugging.md) before concluding the data is unavailable.

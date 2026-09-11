@@ -270,7 +270,7 @@ class CliOutputTests(unittest.TestCase):
             load_settings_mock.return_value = JiraSettings(
                 base_url="https://example.atlassian.net",
                 user_email="user@example.com",
-                password="",
+                password="password",
                 api_token="token",
                 project_scope="MFD",
             )
@@ -307,7 +307,7 @@ class CliOutputTests(unittest.TestCase):
             load_settings_mock.return_value = JiraSettings(
                 base_url="https://example.atlassian.net",
                 user_email="user@example.com",
-                password="",
+                password="password",
                 api_token="token",
                 project_scope="MFD",
             )
@@ -420,10 +420,58 @@ class CliOutputTests(unittest.TestCase):
                             ])
 
         self.assertEqual(exit_code, 0)
-        self.assertIn('"issue_key": "MFD-1234"', stdout.getvalue())
+        self.assertEqual(stdout.getvalue(), "")
         self.assertIn("Saved normalized output to C:/tmp/MFD-1234-normalized.json", stderr.getvalue())
         self.assertIn("Saved raw payload JSON to C:/tmp/MFD-1234-raw.json", stderr.getvalue())
         raw_mock.assert_called_once()
+        json_mock.assert_called_once()
+
+    def test_main_save_normalized_to_suppresses_stdout(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-1234",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://example.atlassian.net/browse/MFD-1234",
+            ),
+            raw_response={"key": "MFD-1234"},
+        )
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://example.atlassian.net",
+                user_email="user@example.com",
+                password="",
+                api_token="token",
+                project_scope="MFD",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.fetch_issue.return_value = result
+                with patch(
+                    "jira_context_harness.cli._write_json_file",
+                    return_value=Path("C:/tmp/MFD-1234-normalized.json"),
+                ) as json_mock:
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                        exit_code = main([
+                            "fetch",
+                            "test-case",
+                            "MFD-1234",
+                            "--save-normalized-to",
+                            "C:/tmp/MFD-1234-normalized.json",
+                        ])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("Saved normalized output to C:/tmp/MFD-1234-normalized.json", stderr.getvalue())
         json_mock.assert_called_once()
 
     def test_main_save_normalized_to_rejects_raw_view(self) -> None:

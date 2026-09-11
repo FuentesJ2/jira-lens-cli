@@ -111,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument(
         "--save-normalized-to",
         default=None,
-        help="Optional file path to also save the normalized fetch output to disk.",
+        help="Optional file path to save the normalized fetch output to disk and suppress normalized stdout output.",
     )
     fetch_parser.add_argument(
         "--save-raw-payload-to",
@@ -591,6 +591,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.save_normalized_to:
             normalized_path = _write_json_file(Path(args.save_normalized_to), json.loads(rendered_output))
             print(f"Saved normalized output to {normalized_path}", file=sys.stderr)
+            return 0
 
         print(rendered_output, end="")
         return 0

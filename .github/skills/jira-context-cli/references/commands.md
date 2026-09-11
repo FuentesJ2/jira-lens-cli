@@ -18,14 +18,16 @@ C:/Dev/.github/tools/jira-context/jira-context.exe fetch test-case MFD-9212 --sa
 ```
 
 Ask to run or approve the direct fetch command itself. Do not generate a PowerShell wrapper that captures stdout, branches between issue kinds, checks file creation, or prints sentinel markers.
+Always include `--save-normalized-to` for agent-driven fetches, then open that saved JSON file directly.
+Do not inspect Copilot chat-session transcript files such as `chat-session-resources/.../content.txt` when the normalized JSON file already exists.
 
-Default agent fetch with no artifact side effects:
+Default agent fetch:
 
 ```powershell
-<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json
 ```
 
-If the normalized payload may be large, save it directly from the CLI and read that file first:
+Read the saved normalized file first:
 
 ```powershell
 <workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json
@@ -43,8 +45,9 @@ The raw payload file for that command is written automatically to:
 <workspace-root>/.github/tools/jira-context/jira-output/fetch-test-case-MFD-7754-full-raw-payload.json
 ```
 
-The normalized file is what the agent should read first. Access the stable keys directly from that JSON before doing any generic text processing.
-If `--save-normalized-to` was used, read that saved file before any repo, code, or test search, and state the exact normalized keys you used.
+The normalized file is the canonical artifact the agent should read first. Access the stable keys directly from that JSON before doing any generic text processing.
+After `--save-normalized-to`, read that saved file before any repo, code, or test search, and state the exact normalized keys you used.
+Do not re-read terminal transcript output or `content.txt` capture files as a substitute for the saved normalized JSON.
 For a requirement fetch, inspect this order first: `issue_key`, `summary`, `description`, `status`, `custom_fields`, `links`, then `comments`.
 Unless the user explicitly asked for code or test impact, stop after the Jira summary and `Next Query Layers` instead of pivoting into workspace searches.
 When the Tessie or MFD Test Script Agent workflow is active, still fetch live Jira data with this CLI first for named issue keys instead of substituting repository CSV exports.
