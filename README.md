@@ -189,7 +189,6 @@ The workflow triggers on:
 
 1. Manual runs through `workflow_dispatch`
 2. Pushes to `main`
-3. Tags that start with `v`
 
 What it produces:
 
@@ -204,11 +203,60 @@ That zip is the teammate-facing deliverable. They should not need to clone this 
 Recommended internal GitHub flow:
 
 1. Push this repo to your internal GitHub remote.
-2. Open the Actions tab and run `Build Portable Bundle`, or push a `v*` tag.
+2. Open the Actions tab and run `Build Portable Bundle`, or push to `main`.
 3. Download the uploaded artifact zip from the workflow run.
 4. Extract it at the target workspace root so the `.github` folder lands in place.
 
-For a cleaner teammate experience later, you can add a release workflow that publishes the same zip as a release asset and pair it with a one-command PowerShell installer.
+For release-based teammate installs, the repo also includes `.github/workflows/release-portable-bundle.yml`.
+That workflow runs on tags that start with `v` and publishes the same workspace-ready zip as a GitHub release asset.
+
+## Bootstrap installer
+
+The recommended teammate entrypoint is `install-jira-context.ps1` in the repo root.
+
+What it does:
+
+1. Uses the current release by default, or a specific release tag when `-Version` is provided.
+2. Resolves the workspace root from `-WorkspaceRoot` or by walking upward from the current directory until it finds `.github` or `.git`.
+3. Creates `.github`, `.github/skills`, and `.github/tools` if they do not exist.
+4. Replaces only the managed folders:
+	- `.github/skills/jira-context-cli`
+	- `.github/tools/jira-context`
+5. Preserves `.github/tools/jira-context/.env` by default.
+6. Preserves `jira-output` by default.
+7. Preserves `.artifacts` by default, unless `-CleanArtifacts` is passed.
+
+Recommended usage from a teammate workspace root:
+
+```powershell
+Invoke-WebRequest -OutFile install-jira-context.ps1 https://github.com/FuentesJ2/jira-lens-cli/raw/main/install-jira-context.ps1
+.\install-jira-context.ps1
+```
+
+Install a specific release instead of the latest one:
+
+```powershell
+.\install-jira-context.ps1 -Version v0.1.0
+```
+
+Target a specific workspace explicitly:
+
+```powershell
+.\install-jira-context.ps1 -WorkspaceRoot C:/Dev/my-workspace
+```
+
+For private or internal GitHub, pass a token explicitly or set `GITHUB_TOKEN` before running the installer:
+
+```powershell
+$env:GITHUB_TOKEN = "<token>"
+.\install-jira-context.ps1 -GitHubBaseUrl https://github.example.com -Repository my-org/jira-lens-cli
+```
+
+For offline or pre-downloaded installs, point the installer at a local bundle zip:
+
+```powershell
+.\install-jira-context.ps1 -BundleZipPath C:/Temp/jira-context-workspace-bundle-v0.1.0.zip
+```
 
 ### What `.[build]` means
 

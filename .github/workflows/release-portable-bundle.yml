@@ -1,16 +1,15 @@
-name: Build Portable Bundle
+name: Release Portable Bundle
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build-windows-bundle:
+  release-windows-bundle:
     runs-on: windows-latest
 
     steps:
@@ -56,9 +55,8 @@ jobs:
           Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
           Compress-Archive -Path ".release/workspace-bundle/*" -DestinationPath $archivePath
 
-      - name: Upload workspace-ready artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
         with:
-          name: jira-context-workspace-bundle-${{ github.ref_name }}
-          path: .release/jira-context-workspace-bundle-${{ github.ref_name }}.zip
-          if-no-files-found: error
+          files: .release/jira-context-workspace-bundle-${{ github.ref_name }}.zip
+          generate_release_notes: true
