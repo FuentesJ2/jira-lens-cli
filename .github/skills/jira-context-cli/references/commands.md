@@ -23,38 +23,43 @@ If the normalized payload may be large, save it directly from the CLI and read t
 <workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json
 ```
 
-Fetch normalized test-case JSON and also save the raw trust payload to the hidden artifact folder:
+Fetch normalized test-case JSON and also save the raw payload JSON in `jira-output/`:
 
 ```powershell
-<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-test-case-MFD-7754-full-raw-payload.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/jira-output/fetch-test-case-MFD-7754-full-raw-payload.json
 ```
 
-Fetch and name the normalized file and raw artifact explicitly in one command:
+Fetch and name the normalized file and raw payload file explicitly in one command:
 
 ```powershell
-<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-test-case-MFD-7754-full-raw-payload.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/jira-output/fetch-test-case-MFD-7754-full-raw-payload.json
 ```
 
-The raw trust artifact for that command is written automatically to:
+The raw payload file for that command is written automatically to:
 
 ```text
-<workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-test-case-MFD-7754-full-raw-payload.json
+<workspace-root>/.github/tools/jira-context/jira-output/fetch-test-case-MFD-7754-full-raw-payload.json
 ```
 
 The normalized file is what the agent should read first. Access the stable keys directly from that JSON before doing any generic text processing.
-The raw artifact is only for trust checks and source-payload inspection when the schema is genuinely unknown or the user explicitly asks for it.
+If `--save-normalized-to` was used, read that saved file before any repo, code, or test search, and state the exact normalized keys you used.
+For a requirement fetch, inspect this order first: `issue_key`, `summary`, `description`, `status`, `custom_fields`, `links`, then `comments`.
+Unless the user explicitly asked for code or test impact, stop after the Jira summary and `Next Query Layers` instead of pivoting into workspace searches.
+When the Tessie or MFD Test Script Agent workflow is active, still fetch live Jira data with this CLI first for named issue keys instead of substituting repository CSV exports.
+The saved raw payload file is only for source-payload inspection when the schema is genuinely unknown or the user explicitly asks for it.
+Use `jira-output/` for both normalized and raw saved JSON outputs.
 Do not place runtime JSON payloads inside `.github/skills/`; keep them under the harness runtime area instead.
 
-Fetch normalized requirement JSON and also save the raw trust payload:
+Fetch normalized requirement JSON and also save the raw payload JSON:
 
 ```powershell
-<workspace-root>/.github/tools/jira-context/jira-context.exe fetch requirement DMFDREQ-1448 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/DMFDREQ-1448-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-requirement-DMFDREQ-1448-full-raw-payload.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch requirement DMFDREQ-1448 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/DMFDREQ-1448-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/jira-output/fetch-requirement-DMFDREQ-1448-full-raw-payload.json
 ```
 
-Fetch normalized problem-report JSON and also save the raw trust payload:
+Fetch normalized problem-report JSON and also save the raw payload JSON:
 
 ```powershell
-<workspace-root>/.github/tools/jira-context/jira-context.exe fetch problem-report MFD-8100 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-8100-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-problem-report-MFD-8100-full-raw-payload.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch problem-report MFD-8100 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-8100-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/jira-output/fetch-problem-report-MFD-8100-full-raw-payload.json
 ```
 
 ## Advanced Fetch Options

@@ -11,8 +11,6 @@ build/
 *.egg-info/
 .env
 jira-output/
-/.artifacts/tmp/*
-!/.artifacts/tmp/.gitkeep
 *-raw.json
 *-normalized.json
 *-both.json

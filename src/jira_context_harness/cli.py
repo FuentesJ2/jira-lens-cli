@@ -106,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument(
         "--include-raw-payload",
         action="store_true",
-        help="Keep stdout limited to normalized JSON and also save the raw fetched payload to .artifacts/tmp for trust and inspection.",
+        help="Keep stdout limited to normalized JSON and also save the raw fetched payload to jira-output for optional inspection.",
     )
     fetch_parser.add_argument(
         "--save-normalized-to",
@@ -116,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument(
         "--save-raw-payload-to",
         default=None,
-        help="Optional file path to save the raw trust payload artifact. Implies --include-raw-payload.",
+        help="Optional file path to save the raw fetched payload JSON. Implies --include-raw-payload.",
     )
     fetch_parser.add_argument(
         "--section",
@@ -574,7 +574,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         if legacy_combined_requested:
             print(
-                "`--view combined` is deprecated for `fetch`. Use `--include-raw-payload` instead. Stdout now stays normalized while the raw payload is written to .artifacts/tmp/.",
+                "`--view combined` is deprecated for `fetch`. Use `--include-raw-payload` instead. Stdout now stays normalized while the raw payload is written to jira-output/.",
                 file=sys.stderr,
             )
 
@@ -586,7 +586,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 section=args.section,
                 artifact_path=Path(args.save_raw_payload_to) if args.save_raw_payload_to else None,
             )
-            print(f"Saved raw payload artifact to {artifact_path}", file=sys.stderr)
+            print(f"Saved raw payload JSON to {artifact_path}", file=sys.stderr)
 
         if args.save_normalized_to:
             normalized_path = _write_json_file(Path(args.save_normalized_to), json.loads(rendered_output))

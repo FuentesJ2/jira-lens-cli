@@ -315,7 +315,7 @@ class CliOutputTests(unittest.TestCase):
                 jira_client_mock.return_value.fetch_issue.return_value = result
                 with patch(
                     "jira_context_harness.cli._write_raw_payload_artifact",
-                    return_value=Path("C:/Dev/jira-context-harness/.artifacts/tmp/fetch-test-case-MFD-1234-full-raw-payload.json"),
+                    return_value=Path("C:/Dev/jira-context-harness/jira-output/fetch-test-case-MFD-1234-full-raw-payload.json"),
                 ) as artifact_mock:
                     stdout = io.StringIO()
                     stderr = io.StringIO()
@@ -325,7 +325,7 @@ class CliOutputTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn('"issue_key": "MFD-1234"', stdout.getvalue())
         self.assertNotIn('"raw_response"', stdout.getvalue())
-        self.assertIn("Saved raw payload artifact to", stderr.getvalue())
+        self.assertIn("Saved raw payload JSON to", stderr.getvalue())
         artifact_mock.assert_called_once()
 
     def test_main_legacy_combined_view_alias_now_writes_artifact_and_emits_normalized_json(self) -> None:
@@ -358,7 +358,7 @@ class CliOutputTests(unittest.TestCase):
                 jira_client_mock.return_value.fetch_issue.return_value = result
                 with patch(
                     "jira_context_harness.cli._write_raw_payload_artifact",
-                    return_value=Path("C:/Dev/jira-context-harness/.artifacts/tmp/fetch-test-case-MFD-1234-full-raw-payload.json"),
+                    return_value=Path("C:/Dev/jira-context-harness/jira-output/fetch-test-case-MFD-1234-full-raw-payload.json"),
                 ):
                     stdout = io.StringIO()
                     stderr = io.StringIO()
@@ -422,7 +422,7 @@ class CliOutputTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn('"issue_key": "MFD-1234"', stdout.getvalue())
         self.assertIn("Saved normalized output to C:/tmp/MFD-1234-normalized.json", stderr.getvalue())
-        self.assertIn("Saved raw payload artifact to C:/tmp/MFD-1234-raw.json", stderr.getvalue())
+        self.assertIn("Saved raw payload JSON to C:/tmp/MFD-1234-raw.json", stderr.getvalue())
         raw_mock.assert_called_once()
         json_mock.assert_called_once()
 

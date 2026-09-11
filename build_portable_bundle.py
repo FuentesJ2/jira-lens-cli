@@ -26,19 +26,16 @@ The preferred deployed shape is a compiled `jira-context.exe` plus this folder's
 
 - Run `jira-context.exe` from this folder.
 - Configuration is stored in `.env` in this folder.
-- Raw trust artifacts are written to `.artifacts/tmp/` in this folder.
-- User-visible saved JSON files can go in `jira-output/` in this folder.
+- Saved JSON files, including normalized fetches and optional raw payload captures, go in `jira-output/` in this folder.
 """
 
 DEPLOYED_TOOL_GITIGNORE = """.env
-.artifacts/tmp/*
-!.artifacts/tmp/.gitkeep
 jira-output/*
 !jira-output/README.txt
 """
 
 DEPLOYED_JIRA_OUTPUT_README = (
-    "Use this folder for user-visible normalized JSON outputs when you want to persist CLI fetch results.\n"
+    "Use this folder for persisted normalized and raw JSON outputs when you want to keep CLI fetch results.\n"
 )
 
 
@@ -167,7 +164,6 @@ def _assemble_bundle() -> Path:
     _copy_file(built_exe, bundle_root / "jira-context.exe")
     _write_file(bundle_root / ".gitignore", DEPLOYED_TOOL_GITIGNORE)
     _write_file(bundle_root / "README.md", DEPLOYED_TOOL_README)
-    _write_file(bundle_root / ".artifacts" / "tmp" / ".gitkeep", "keep\n")
     _write_file(bundle_root / "jira-output" / "README.txt", DEPLOYED_JIRA_OUTPUT_README)
     return bundle_root
 

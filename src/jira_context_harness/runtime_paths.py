@@ -13,7 +13,7 @@ def runtime_root() -> Path:
 
 
 def raw_payload_artifact_dir() -> Path:
-    return runtime_root() / ".artifacts" / "tmp"
+    return normalized_output_dir()
 
 
 def normalized_output_dir() -> Path:

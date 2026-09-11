@@ -138,7 +138,7 @@ function Preserve-InstallState {
     param(
         [string]$ExistingToolRoot,
         [string]$StashRoot,
-        [switch]$PreserveArtifacts,
+        [switch]$PreserveOutput,
         [switch]$PreserveConfig
     )
 
@@ -154,13 +154,8 @@ function Preserve-InstallState {
     }
 
     $jiraOutputPath = Join-Path $ExistingToolRoot "jira-output"
-    if (Test-Path -LiteralPath $jiraOutputPath -PathType Container) {
+    if ($PreserveOutput -and (Test-Path -LiteralPath $jiraOutputPath -PathType Container)) {
         Copy-Item -LiteralPath $jiraOutputPath -Destination $StashRoot -Recurse -Force
-    }
-
-    $artifactsPath = Join-Path $ExistingToolRoot ".artifacts"
-    if ($PreserveArtifacts -and (Test-Path -LiteralPath $artifactsPath -PathType Container)) {
-        Copy-Item -LiteralPath $artifactsPath -Destination $StashRoot -Recurse -Force
     }
 }
 
@@ -169,7 +164,7 @@ function Restore-InstallState {
         [string]$StashRoot,
         [string]$ToolRoot,
         [switch]$RestoreConfig,
-        [switch]$RestoreArtifacts
+        [switch]$RestoreOutput
     )
 
     if (-not (Test-Path -LiteralPath $StashRoot -PathType Container)) {
@@ -182,13 +177,8 @@ function Restore-InstallState {
     }
 
     $jiraOutputPath = Join-Path $StashRoot "jira-output"
-    if (Test-Path -LiteralPath $jiraOutputPath -PathType Container) {
+    if ($RestoreOutput -and (Test-Path -LiteralPath $jiraOutputPath -PathType Container)) {
         Copy-Item -LiteralPath $jiraOutputPath -Destination $ToolRoot -Recurse -Force
-    }
-
-    $artifactsPath = Join-Path $StashRoot ".artifacts"
-    if ($RestoreArtifacts -and (Test-Path -LiteralPath $artifactsPath -PathType Container)) {
-        Copy-Item -LiteralPath $artifactsPath -Destination $ToolRoot -Recurse -Force
     }
 }
 
@@ -245,7 +235,7 @@ try {
     New-Item -ItemType Directory -Path $destinationToolsRoot -Force | Out-Null
 
     $stashRoot = Join-Path $tempRoot "preserved"
-    Preserve-InstallState -ExistingToolRoot $destinationTool -StashRoot $stashRoot -PreserveArtifacts:(-not $CleanArtifacts) -PreserveConfig:(-not $ForceConfigReset)
+    Preserve-InstallState -ExistingToolRoot $destinationTool -StashRoot $stashRoot -PreserveOutput:(-not $CleanArtifacts) -PreserveConfig:(-not $ForceConfigReset)
 
     Write-InstallStep "Installing skill files"
     Remove-Item -LiteralPath $destinationSkill -Recurse -Force -ErrorAction SilentlyContinue
@@ -255,7 +245,7 @@ try {
     Remove-Item -LiteralPath $destinationTool -Recurse -Force -ErrorAction SilentlyContinue
     Copy-Item -LiteralPath $sourceTool -Destination $destinationToolsRoot -Recurse -Force
 
-    Restore-InstallState -StashRoot $stashRoot -ToolRoot $destinationTool -RestoreArtifacts:(-not $CleanArtifacts) -RestoreConfig:(-not $ForceConfigReset)
+    Restore-InstallState -StashRoot $stashRoot -ToolRoot $destinationTool -RestoreOutput:(-not $CleanArtifacts) -RestoreConfig:(-not $ForceConfigReset)
 
     Write-Host ""
     Write-Host "Install complete"

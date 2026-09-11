@@ -65,7 +65,7 @@ The checked-in `jira-context.cmd` wrapper now prefers a sibling `jira-context.ex
 
 For `fetch`, stdout is the agent-facing payload. That should stay small and cleaned up.
 Normal `fetch` should not create any background artifact files.
-If you also want the original heavy trust payload, use `--include-raw-payload`; the CLI will write that raw material to `.artifacts/tmp/` and keep stdout normalized.
+If you also want the original raw payload JSON, use `--include-raw-payload`; the CLI will write that raw material to `jira-output/` and keep stdout normalized.
 If you want the file destinations to be explicit in one command, use `--save-normalized-to` and `--save-raw-payload-to`.
 Keep runtime payload files under the harness root, not inside `.github/skills/`, so the skill content remains shareable and version-controlled without artifact churn.
 
@@ -171,9 +171,9 @@ The deploy targets are:
 
 After deployment, run `C:/path/to/other/workspace/.github/tools/jira-context/jira-context.exe` directly.
 
-Because the runtime path logic now detects frozen executables, the deployed `.env`, `.artifacts/tmp/`, and `jira-output/` locations stay rooted next to the `.exe` rather than inside a temporary extraction directory.
+Because the runtime path logic now detects frozen executables, the deployed `.env` and `jira-output/` locations stay rooted next to the `.exe` rather than inside a temporary extraction directory.
 
-The deployed tool folder is intended to be code-free: the builder emits `jira-context.exe`, `.artifacts/tmp/`, and `jira-output/` there, and deploys the skill separately.
+The deployed tool folder is intended to be code-free: the builder emits `jira-context.exe` and `jira-output/` there, and deploys the skill separately.
 
 If you want to build without deploying, use:
 
@@ -223,8 +223,7 @@ What it does:
 	- `.github/skills/jira-context-cli`
 	- `.github/tools/jira-context`
 5. Preserves `.github/tools/jira-context/.env` by default.
-6. Preserves `jira-output` by default.
-7. Preserves `.artifacts` by default, unless `-CleanArtifacts` is passed.
+6. Preserves `jira-output` by default, unless `-CleanArtifacts` is passed.
 
 Recommended usage from a teammate workspace root:
 
@@ -275,7 +274,7 @@ Do not run `python cli.py ...` from inside `src/jira_context_harness`. That bypa
 
 If your local Python is older than the version originally assumed during scaffolding, package metadata and language features must match that reality. The current scaffold avoids `dataclass(slots=True)` so the launcher path works in older local interpreters.
 
-Another important gotcha is output redirection: onboarding prompts are written to stderr so commands like `./jira-context.cmd fetch test-case MFD-1234 --include-raw-payload > test-case-normalized.json` can still create a clean JSON file on stdout while the raw trust payload is written separately to `.artifacts/tmp/`.
+Another important gotcha is output redirection: onboarding prompts are written to stderr so commands like `./jira-context.cmd fetch test-case MFD-1234 --include-raw-payload > test-case-normalized.json` can still create a clean JSON file on stdout while the raw payload JSON is written separately to `jira-output/`.
 
 For internal Jira hosts such as `https://avjira`, the harness may need Jira Server or Data Center REST paths. The current client now tries the common issue endpoint variants automatically, starting with `/rest/api/2` for non-Cloud hosts.
 
@@ -293,31 +292,31 @@ Fetch normalized JSON:
 ./jira-context.cmd fetch test-case MFD-1234 > test-case-normalized.json
 ```
 
-Fetch normalized JSON and also save the raw payload artifact for trust and inspection:
+Fetch normalized JSON and also save the raw payload JSON for optional inspection:
 
 ```text
 ./jira-context.cmd fetch test-case MFD-1234 --include-raw-payload > test-case-normalized.json
 ```
 
-Fetch and name the normalized file and raw artifact explicitly in one command:
+Fetch and name the normalized file and raw payload file explicitly in one command:
 
 ```text
-./jira-context.cmd fetch test-case MFD-1234 --save-normalized-to ./jira-output/MFD-1234-normalized.json --save-raw-payload-to ./.artifacts/tmp/fetch-test-case-MFD-1234-full-raw-payload.json
+./jira-context.cmd fetch test-case MFD-1234 --save-normalized-to ./jira-output/MFD-1234-normalized.json --save-raw-payload-to ./jira-output/fetch-test-case-MFD-1234-full-raw-payload.json
 ```
 
-That raw trust artifact is written automatically to:
+That raw payload file is written automatically to:
 
 ```text
-./.artifacts/tmp/fetch-test-case-MFD-1234-full-raw-payload.json
+./jira-output/fetch-test-case-MFD-1234-full-raw-payload.json
 ```
 
-For internal Jira test cases, `fetch test-case` also enriches the normalized output with TestRay context from the documented Synapse endpoints, including `test_steps`, `linked_requirements`, `linked_test_suites`, `linked_test_plans`, `defects`, and `ad_hoc_test_runs`. When you use `--include-raw-payload`, the raw Jira issue payload and raw supplemental payloads are stored together in the hidden artifact file.
+For internal Jira test cases, `fetch test-case` also enriches the normalized output with TestRay context from the documented Synapse endpoints, including `test_steps`, `linked_requirements`, `linked_test_suites`, `linked_test_plans`, `defects`, and `ad_hoc_test_runs`. When you use `--include-raw-payload`, the raw Jira issue payload and raw supplemental payloads are stored together in the saved raw payload file.
 
-The `.artifacts/tmp/` directory is the common local-workspace pattern here: it is git-ignored, predictable, and meant for throwaway trust artifacts. It is not truly hidden at the Windows filesystem level, but the dot-folder naming keeps it out of the main repo surface. Right now these artifact files use stable names and overwrite the previous fetch for the same issue and section, so the folder does not grow forever even without a cleanup command.
+The `jira-output/` directory is the single persisted output folder here: it is git-ignored, predictable, and meant for both normalized fetches and optional raw payload captures. Right now these files use stable names and overwrite the previous fetch for the same issue and section, so the folder does not grow forever even without a cleanup command.
 
-The raw artifact is sanitized before it is written. Keys named `avatarUrls` are stripped recursively from Jira and Synapse payloads so that avatar links never appear in normalized output, raw fetch artifacts, or raw-included reports.
+The raw payload file is sanitized before it is written. Keys named `avatarUrls` are stripped recursively from Jira and Synapse payloads so that avatar links never appear in normalized output, saved raw payload files, or raw-included reports.
 
-The normalized `test_steps` and ad hoc run `steps` use stable keys such as `step_number`, `step_text`, `step_raw`, `step_html`, `expected_result_text`, `expected_result_raw`, `expected_result_html`, `requirement_keys`, and `attachments`, so the agent can consume a predictable schema while you still retain the raw plugin response for trust.
+The normalized `test_steps` and ad hoc run `steps` use stable keys such as `step_number`, `step_text`, `step_raw`, `step_html`, `expected_result_text`, `expected_result_raw`, `expected_result_html`, `requirement_keys`, and `attachments`, so the agent can consume a predictable schema while you still retain the raw plugin response when needed.
 
 If you want only the part you care about, use `--section` on `fetch`:
 
@@ -329,7 +328,7 @@ If you want only the part you care about, use `--section` on `fetch`:
 
 The CLI now keeps these sections pure: `authored-steps` returns the current test-case steps, `ad-hoc-runs` returns ad hoc execution records, `comments` returns comments, and `links` returns linked issues.
 
-If you add `--include-raw-payload` to a sectioned fetch, stdout still contains only the normalized section you asked for, and the matching raw section payload is written to `.artifacts/tmp/`.
+If you add `--include-raw-payload` to a sectioned fetch, stdout still contains only the normalized section you asked for, and the matching raw section payload is written to `jira-output/`.
 
 The `comments` section is already useful for narrative issue history such as reviewer notes, bug discovery notes, repro confirmations, requirement-ID update notes, and sub-task keys mentioned in comments. It does not currently include Jira changelog events such as every status transition or field edit.
 

@@ -12,7 +12,7 @@ Keep the deployed copy synchronized with this source file.
 ## When to Use
 - The user wants the agent to see the same Jira/TestRay data they can inspect themselves.
 - The user asks for Jira issue links, linked problem reports, comment history, authored test steps, ad hoc run history, linked requirements, test plans, suites, defects, or raw payloads.
-- The user needs a trustable local artifact written to disk before the result is summarized.
+- The user needs a local JSON artifact written to disk before the result is summarized.
 
 ## Runtime
 - Prefer the deployed executable at `<workspace-root>/.github/tools/jira-context/jira-context.exe`.
@@ -20,32 +20,45 @@ Keep the deployed copy synchronized with this source file.
 - The deployed bundle is executable-first: call `jira-context.exe` directly rather than constructing Python commands yourself.
 - Write machine-readable output with `Out-File -Encoding utf8` instead of `>` when saving JSON.
 - For `fetch`, the agent-facing payload should stay normalized and small.
-- Do not create runtime JSON artifacts inside `.github/skills/`. Keep ephemeral payload artifacts under the target workspace `.github/tools/jira-context/.artifacts/tmp/` folder so the skill folder stays versionable and clean.
+- Do not create runtime JSON files inside `.github/skills/`. Keep persisted normalized and raw JSON outputs under the target workspace `.github/tools/jira-context/jira-output/` folder or an explicit user-provided save path.
 - When requesting permission to run a Jira CLI command, ask for approval on the exact `jira-context.exe ...` command only. Do not generate PowerShell wrapper functions, pre/post directory scans, file-diff scaffolding, or other validation scripts unless the user explicitly asked for that deeper validation.
+
+## Working With Tessie
+- When this skill and the Tessie or MFD Test Script Agent workflow are both relevant, this skill owns live Jira and TestRay retrieval and Tessie owns downstream test-case or script generation.
+- If the user names a Jira issue key or asks for current requirement text, status, links, comments, authored steps, ad hoc runs, or related issues, run `jira-context.exe` first instead of answering from repository CSVs.
+- Treat repository CSV exports and supporting docs as secondary references for style, compatibility, offline work, or cross-checking after the live fetch. They do not replace the CLI for the named Jira issue.
+- If live Jira data and repository CSVs disagree, report both and prefer the live CLI fetch for current issue metadata.
+- After a live fetch, Tessie may use the normalized JSON results to generate or revise test cases and scripts.
+- Only skip the CLI-first fetch when the user explicitly asks for a CSV-only or offline workflow, or when Jira access is unavailable.
 
 ## Procedure
 1. Determine the issue kind: use `test-case` for MFD test cases, `requirement` for requirement issues such as `DMFDREQ-1448`, and `problem-report` for linked bug or problem-report issues.
 2. For a small or focused fetch, run the CLI normally and treat stdout as the normalized payload the agent should read.
 3. If the payload may be large, use `--save-normalized-to` immediately so the normalized JSON is written intentionally to `jira-output/` by the CLI.
-4. Read the saved normalized JSON file and access its known stable keys directly before doing any generic text processing.
-5. If the first fetch is a `test-case`, always inspect and digest the currently linked requirements from that normalized payload before finishing the initial analysis, unless the user explicitly asked to stay on the test case only.
-6. If the user wants a trust artifact too, add `--include-raw-payload` or `--save-raw-payload-to`. Keep the raw payload on disk and out of the main summary path unless it is needed.
-7. Only open the raw artifact file or use text-search when the normalized schema is genuinely unknown or the user explicitly wants source-payload details.
-8. When the user asks for a specific slice, prefer `--section` over a full dump.
-9. If the CLI fails or the Jira/TestRay shape is unclear, use the troubleshooting commands in [debugging reference](./references/debugging.md) before concluding the data is unavailable.
-10. For simple fetch validation, request execution of the direct CLI command only. Do not wrap it in a generated `pwsh` program just to observe side effects.
-11. After the initial analysis, always tell the user what the next query layer is, if any, for example linked requirements, related issues on a requirement, or an open problem report worth expanding.
+4. If `--save-normalized-to` was used, read that saved normalized JSON file before any repo, code, or test search. Do not treat the saved file as a trailing artifact check.
+5. When you read normalized JSON, name the exact stable keys you used before doing any generic text processing.
+6. For a `requirement` fetch, inspect this order first: `issue_key`, `summary`, `description`, `status`, `custom_fields`, `links`, then `comments`.
+7. Unless the user explicitly asks for code impact, test impact, implementation comparison, or framework behavior, stop after the Jira/TestRay summary and `Next Query Layers`. Do not pivot into workspace searches on your own.
+8. If the first fetch is a `test-case`, always inspect and digest the currently linked requirements from that normalized payload before finishing the initial analysis, unless the user explicitly asked to stay on the test case only.
+9. If the user wants raw source payload JSON too, add `--include-raw-payload` or `--save-raw-payload-to`. Keep the raw payload on disk and out of the main summary path unless it is needed.
+10. Only open the saved raw payload file or use text-search when the normalized schema is genuinely unknown or the user explicitly wants source-payload details.
+11. When the user asks for a specific slice, prefer `--section` over a full dump.
+12. If the CLI fails or the Jira/TestRay shape is unclear, use the troubleshooting commands in [debugging reference](./references/debugging.md) before concluding the data is unavailable.
+13. For simple fetch validation, request execution of the direct CLI command only. Do not wrap it in a generated `pwsh` program just to observe side effects.
+14. After the initial analysis, always tell the user what the next query layer is, if any, for example linked requirements, related issues on a requirement, or an open problem report worth expanding.
 
 ## Explain Fetch
 - `fetch` retrieves one Jira issue key and normalizes it into a smaller, stable JSON schema for the agent.
 - The agent should treat stdout from `fetch` as the primary payload only when the payload is small enough to stay manageable inline.
 - A normal `fetch` should not create any background artifact files.
 - A normal `fetch` validation should also be requested as a normal command, not as an agent-generated script wrapper.
-- If `--include-raw-payload` or `--save-raw-payload-to` is used, the raw Jira and Synapse source payloads are written to disk as a trust artifact and are not automatically placed into the model context.
+- If `--include-raw-payload` or `--save-raw-payload-to` is used, the raw Jira and Synapse source payloads are written to disk as JSON files and are not automatically placed into the model context.
 - If `--save-normalized-to` is used, the normalized payload is written to a user-visible JSON file that the agent should read directly when the fetch may be large.
+- When `--save-normalized-to` is used, that saved normalized file becomes the canonical artifact to read first before any broader repo investigation.
 - Raw artifacts are sanitized before they are written: recursive `avatarUrls` fields are removed.
-- Do not describe `fetch` as getting multiple issues. It fetches one issue and can optionally save two file outputs: one normalized JSON file and one raw trust artifact.
+- Do not describe `fetch` as getting multiple issues. It fetches one issue and can optionally save two JSON file outputs: one normalized JSON file and one raw payload JSON file.
 - Do not write generic tree-walk scripts against normalized fetch output unless the schema is genuinely unknown. Read the stable normalized keys directly from the saved normalized JSON first.
+- `jira-output/` is the default persisted output folder for both normalized JSON and optional raw payload JSON files.
 
 ## Default Fetch
 ```powershell
@@ -54,7 +67,7 @@ Keep the deployed copy synchronized with this source file.
 
 ## Optional Audit Fetch
 ```powershell
-<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/.artifacts/tmp/fetch-test-case-MFD-7754-full-raw-payload.json
+<workspace-root>/.github/tools/jira-context/jira-context.exe fetch test-case MFD-7754 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/MFD-7754-normalized.json --save-raw-payload-to <workspace-root>/.github/tools/jira-context/jira-output/fetch-test-case-MFD-7754-full-raw-payload.json
 ```
 
 ## Focused Fetches
@@ -70,10 +83,12 @@ Use the exact command patterns in [commands reference](./references/commands.md)
 - Prefer normalized output for summaries.
 - Default to plain `fetch` with no save flags and no raw flags for small or focused payloads.
 - If the payload may be large, prefer `--save-normalized-to` and then read the saved JSON file instead of depending on inline stdout delivery.
-- Preserve raw payloads for trust, but keep them on disk instead of in the agent-facing stdout whenever `fetch` is used.
-- Explain `--include-raw-payload` plainly as: normalized JSON stays on stdout, and the original heavy raw payload is written to `.artifacts/tmp/`.
-- The agent only sees the raw artifact if it explicitly opens that file afterward. A fetch alone does not automatically stuff the raw payload into the model context.
+- If `--save-normalized-to` was used, read that saved JSON before any repo search and state which normalized keys you relied on.
+- Keep raw payload JSON on disk instead of in the agent-facing stdout whenever `fetch` is used.
+- Explain `--include-raw-payload` plainly as: normalized JSON stays on stdout, and the original raw payload JSON is written to `jira-output/`.
+- The agent only sees the raw payload file if it explicitly opens that file afterward. A fetch alone does not automatically stuff the raw payload into the model context.
 - After saving normalized output, read the known keys directly and summarize from that file rather than using generic text-search.
+- Do not pivot into codebase, test-framework, or implementation searches after a fetch unless the user explicitly asked for that second layer of analysis.
 - Present data in markdown tables whenever the fields fit cleanly into rows and columns. Use bullets only for long prose, detailed commentary, or evidence that does not fit a table cleanly.
 - When a test case is fetched first, include the current linked requirements in the initial summary rather than treating them as optional follow-up context.
 - Use `--section comments` first when the user wants narrative history such as who worked on the issue, promotions or demotions mentioned in comments, bug discovery notes, repro notes, linked sub-task keys mentioned in comments, or bulk-update notes.
