@@ -27,7 +27,7 @@ from jira_context_harness.jira_client import (
     JiraClientError,
     JiraConfigurationError,
 )
-from jira_context_harness.runtime_paths import raw_payload_artifact_dir
+from jira_context_harness.runtime_paths import normalized_output_dir, raw_payload_artifact_dir
 
 
 DEFAULT_TEST_CASE_FIELDS = [
@@ -43,6 +43,7 @@ DEFAULT_TEST_CASE_FIELDS = [
 ]
 
 RAW_PAYLOAD_ARTIFACT_DIR = raw_payload_artifact_dir()
+NORMALIZED_OUTPUT_DIR = normalized_output_dir()
 VALID_FETCH_VIEWS = {"normalized", "raw", "combined"}
 LEGACY_FETCH_VIEW_ALIASES = {"both": "combined"}
 
@@ -71,6 +72,14 @@ def _write_json_file(path: Path, payload: object) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
+
+
+def resolve_output_artifact_path(path_arg: str | Path, default_dir: Path) -> Path:
+    candidate = Path(path_arg)
+    if not candidate.is_absolute():
+        candidate = default_dir / candidate
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    return candidate
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -579,17 +588,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
 
         if args.include_raw_payload:
+            resolved_raw_payload_path = (
+                resolve_output_artifact_path(args.save_raw_payload_to, RAW_PAYLOAD_ARTIFACT_DIR)
+                if args.save_raw_payload_to
+                else None
+            )
             artifact_path = _write_raw_payload_artifact(
                 result=result,
                 issue_kind=args.issue_kind,
                 issue_key=args.issue_key,
                 section=args.section,
-                artifact_path=Path(args.save_raw_payload_to) if args.save_raw_payload_to else None,
+                artifact_path=resolved_raw_payload_path,
             )
             print(f"Saved raw payload JSON to {artifact_path}", file=sys.stderr)
 
         if args.save_normalized_to:
-            normalized_path = _write_json_file(Path(args.save_normalized_to), json.loads(rendered_output))
+            resolved_normalized_path = resolve_output_artifact_path(
+                args.save_normalized_to,
+                NORMALIZED_OUTPUT_DIR,
+            )
+            normalized_path = _write_json_file(resolved_normalized_path, json.loads(rendered_output))
             print(f"Saved normalized output to {normalized_path}", file=sys.stderr)
             return 0
 
