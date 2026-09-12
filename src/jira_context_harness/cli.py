@@ -51,12 +51,15 @@ DEFAULT_SEARCH_FIELDS = [
     "assignee",
     "reporter",
     "updated",
+    "created",
+    "priority",
 ]
 
 RAW_PAYLOAD_ARTIFACT_DIR = raw_payload_artifact_dir()
 VALID_FETCH_VIEWS = {"normalized", "raw", "combined"}
 LEGACY_FETCH_VIEW_ALIASES = {"both": "combined"}
 SEARCH_PERSON_MODES = {"current", "history", "current-or-history"}
+SEARCH_ORDER_FIELDS = {"updated", "created", "priority"}
 
 
 def _default_fields_for(issue_kind: str) -> list[str]:
@@ -67,6 +70,10 @@ def _default_fields_for(issue_kind: str) -> list[str]:
 
 def _default_search_fields() -> list[str]:
     return list(DEFAULT_SEARCH_FIELDS)
+
+
+def _ordered_unique_strings(values: Sequence[str]) -> list[str]:
+    return list(dict.fromkeys(value for value in values if value))
 
 
 def _parse_fetch_view(value: str) -> str:
@@ -87,16 +94,17 @@ def _escape_jql_string(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _build_person_search_jql(display_name: str, mode: str) -> str:
+def _build_person_search_jql(display_name: str, mode: str, *, order_by: str) -> str:
     escaped_name = _escape_jql_string(display_name.strip())
     literal = f'"{escaped_name}"'
+    order_clause = f"ORDER BY {order_by} DESC"
 
     if mode == "current":
-        return f"assignee = {literal} ORDER BY updated DESC"
+        return f"assignee = {literal} {order_clause}"
     if mode == "history":
-        return f"assignee WAS {literal} ORDER BY updated DESC"
+        return f"assignee WAS {literal} {order_clause}"
     if mode == "current-or-history":
-        return f"assignee = {literal} OR assignee WAS {literal} ORDER BY updated DESC"
+        return f"assignee = {literal} OR assignee WAS {literal} {order_clause}"
     raise ValueError(f"Unsupported person search mode: {mode}")
 
 
@@ -249,6 +257,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=sorted(SEARCH_PERSON_MODES),
         default=None,
         help="Friendly search mode for `search person`. Defaults to current.",
+    )
+    search_parser.add_argument(
+        "--order-by",
+        choices=sorted(SEARCH_ORDER_FIELDS),
+        default=None,
+        help="Friendly search ordering for `search person`. Defaults to updated.",
     )
     search_parser.add_argument(
         "--fields-by-keys",
@@ -633,22 +647,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if args.jql:
                 parser.error("--jql cannot be combined with search person")
             search_mode = args.mode or "current"
-            jql = _build_person_search_jql(args.search_value, search_mode)
+            order_by = args.order_by or "updated"
+            jql = _build_person_search_jql(args.search_value, search_mode, order_by=order_by)
         else:
             if args.mode is not None:
                 parser.error("--mode is only valid with search person")
+            if args.order_by is not None:
+                parser.error("--order-by is only valid with search person")
             if not args.jql:
                 parser.error("search requires either --jql or `search person <display-name>`")
             search_mode = "raw-jql"
             jql = args.jql
+            order_by = "custom-jql"
 
         request_model = SearchRequest(
             jql=jql,
-            fields=_default_search_fields() + (args.fields or []),
+            fields=_ordered_unique_strings(_default_search_fields() + (args.fields or [])),
             start_at=args.start_at,
             max_results=args.limit,
             fields_by_keys=args.fields_by_keys,
             mode=search_mode,
+            order_by=order_by,
         )
         try:
             settings = _resolve_settings(

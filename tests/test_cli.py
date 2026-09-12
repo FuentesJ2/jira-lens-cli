@@ -141,6 +141,20 @@ class BuildParserTests(unittest.TestCase):
         self.assertEqual(args.mode, "history")
         self.assertIsNone(args.jql)
 
+    def test_search_person_accepts_order_by(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([
+            "search",
+            "person",
+            "Dustin Marek",
+            "--order-by",
+            "created",
+            "--save-normalized-to",
+            "C:/tmp/dustin-marek-created.json",
+        ])
+
+        self.assertEqual(args.order_by, "created")
+
     def test_search_requires_save_path(self) -> None:
         parser = build_parser()
 
@@ -217,6 +231,8 @@ class CliOutputTests(unittest.TestCase):
             returned=1,
             start_at=0,
             max_results=10,
+            order_by="custom-jql",
+            requested_fields=["summary", "updated"],
             issues=[
                 JiraSearchIssue(
                     issue_key="MFD-9212",
@@ -236,6 +252,8 @@ class CliOutputTests(unittest.TestCase):
 
         self.assertIn('"query": "assignee = \\"Dustin Marek\\" ORDER BY updated DESC"', output)
         self.assertIn('"issue_key": "MFD-9212"', output)
+        self.assertIn('"order_by": "custom-jql"', output)
+        self.assertIn('"requested_fields": [', output)
 
     def test_render_fetch_output_supports_raw_json(self) -> None:
         result = JiraFetchResult(
@@ -576,6 +594,7 @@ class CliOutputTests(unittest.TestCase):
             returned=1,
             start_at=0,
             max_results=10,
+            order_by="custom-jql",
             issues=[
                 JiraSearchIssue(
                     issue_key="MFD-9212",
@@ -622,6 +641,8 @@ class CliOutputTests(unittest.TestCase):
             "Saved normalized output to C:/tmp/dustin-marek-search.json",
             stderr.getvalue().replace("\\", "/"),
         )
+        request_model = jira_client_mock.return_value.search_issues.call_args.args[0]
+        self.assertEqual(request_model.order_by, "custom-jql")
         jira_client_mock.return_value.search_issues.assert_called_once()
         json_mock.assert_called_once()
 
@@ -681,8 +702,54 @@ class CliOutputTests(unittest.TestCase):
         )
         request_model = jira_client_mock.return_value.search_issues.call_args.args[0]
         self.assertEqual(request_model.mode, "current")
+        self.assertEqual(request_model.order_by, "updated")
         self.assertEqual(request_model.jql, 'assignee = "Dustin Marek" ORDER BY updated DESC')
         json_mock.assert_called_once()
+
+    def test_main_search_person_builds_created_order_query(self) -> None:
+        result = JiraSearchResult(
+            query='assignee = "Dustin Marek" ORDER BY created DESC',
+            mode="current",
+            total=0,
+            returned=0,
+            start_at=0,
+            max_results=10,
+            order_by="created",
+            issues=[],
+        )
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://example.atlassian.net",
+                user_email="user@example.com",
+                password="password",
+                api_token="token",
+                project_scope="MFD",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.search_issues.return_value = result
+                with patch(
+                    "jira_context_harness.cli._write_json_file",
+                    return_value=Path("C:/tmp/dustin-marek-created.json"),
+                ):
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                        exit_code = main([
+                            "search",
+                            "person",
+                            "Dustin Marek",
+                            "--order-by",
+                            "created",
+                            "--save-normalized-to",
+                            "C:/tmp/dustin-marek-created.json",
+                        ])
+
+        self.assertEqual(exit_code, 0)
+        request_model = jira_client_mock.return_value.search_issues.call_args.args[0]
+        self.assertEqual(request_model.order_by, "created")
+        self.assertEqual(request_model.jql, 'assignee = "Dustin Marek" ORDER BY created DESC')
+        self.assertEqual(stdout.getvalue(), "")
 
     def test_main_search_person_builds_current_or_history_query(self) -> None:
         result = JiraSearchResult(
@@ -748,6 +815,24 @@ class CliOutputTests(unittest.TestCase):
 
         self.assertEqual(exit_context.exception.code, 2)
         self.assertIn("--mode is only valid with search person", stderr.getvalue())
+
+    def test_main_search_rejects_order_by_without_person(self) -> None:
+        stderr = io.StringIO()
+
+        with patch("sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as exit_context:
+                main([
+                    "search",
+                    "--jql",
+                    'assignee = "Dustin Marek" ORDER BY updated DESC',
+                    "--order-by",
+                    "created",
+                    "--save-normalized-to",
+                    "C:/tmp/dustin-marek-search.json",
+                ])
+
+        self.assertEqual(exit_context.exception.code, 2)
+        self.assertIn("--order-by is only valid with search person", stderr.getvalue())
 
     def test_main_save_normalized_to_rejects_raw_view(self) -> None:
         stderr = io.StringIO()

@@ -75,6 +75,12 @@ Or use the friendly person-search wrapper:
 .\.github\tools\jira-context\jira-context.exe search person "Dustin Marek" --mode current-or-history --save-normalized-to .\.github\tools\jira-context\jira-output\dustin-marek-history.json
 ```
 
+Or shape the friendly search for triage work:
+
+```powershell
+.\.github\tools\jira-context\jira-context.exe search person "Dustin Marek" --order-by created --field customfield_12345 --save-normalized-to .\.github\tools\jira-context\jira-output\dustin-marek-created.json
+```
+
 Typical search-to-fetch workflow:
 
 ```powershell
@@ -115,6 +121,7 @@ After the fetch completes, open that saved normalized JSON file directly instead
 For agent-driven `search`, the canonical payload should also be a saved normalized JSON file created with `--save-normalized-to`.
 After the search completes, open that saved normalized JSON file directly instead of re-reading terminal output.
 When the user starts with a person prompt, search first, read the saved normalized search JSON, then fetch the chosen issue key from that search result.
+Search results now preserve `order_by`, `requested_fields`, `has_more`, and `next_start_at` metadata so paging and follow-up fetches stay explicit.
 If you also want the original raw payload JSON, use `--include-raw-payload` or `--save-raw-payload-to`; keep the raw payload on disk unless it is needed.
 Do not treat Copilot chat-session transcript files or temporary terminal capture files as the primary artifact when the normalized JSON file already exists.
 Keep runtime payload files under the harness root, not inside `.github/skills/`, so the skill content remains shareable and version-controlled without artifact churn.

@@ -63,9 +63,9 @@ class JiraClientTests(unittest.TestCase):
             captured["timeout"] = timeout
             return _FakeResponse(
                 {
-                    "startAt": 0,
-                    "maxResults": 10,
-                    "total": 2,
+                    "startAt": 10,
+                    "maxResults": 2,
+                    "total": 15,
                     "issues": [
                         {
                             "key": "MFD-9212",
@@ -77,6 +77,9 @@ class JiraClientTests(unittest.TestCase):
                                 "assignee": {"displayName": "Dustin Marek"},
                                 "reporter": {"displayName": "Delta User"},
                                 "updated": "2026-09-11T12:34:56.000+0000",
+                                "created": "2026-09-10T08:00:00.000+0000",
+                                "priority": {"name": "High"},
+                                "customfield_12345": "Search facet",
                             },
                         },
                         {
@@ -89,6 +92,8 @@ class JiraClientTests(unittest.TestCase):
                                 "assignee": {"displayName": "Dustin Marek"},
                                 "reporter": {"displayName": "Another User"},
                                 "updated": "2026-09-10T11:22:33.000+0000",
+                                "created": "2026-09-09T10:30:00.000+0000",
+                                "priority": {"name": "Low"},
                             },
                         },
                     ],
@@ -109,18 +114,38 @@ class JiraClientTests(unittest.TestCase):
         result = client.search_issues(
             SearchRequest(
                 jql='assignee = "Dustin Marek" ORDER BY updated DESC',
-                fields=["summary", "status", "issuetype", "project", "assignee", "reporter", "updated"],
-                start_at=0,
-                max_results=10,
+                fields=[
+                    "summary",
+                    "status",
+                    "issuetype",
+                    "project",
+                    "assignee",
+                    "reporter",
+                    "updated",
+                    "created",
+                    "priority",
+                    "customfield_12345",
+                ],
+                start_at=10,
+                max_results=2,
             )
         )
 
         self.assertEqual(result.query, 'assignee = "Dustin Marek" ORDER BY updated DESC')
         self.assertEqual(result.mode, "raw-jql")
-        self.assertEqual(result.total, 2)
+        self.assertEqual(result.order_by, "custom-jql")
+        self.assertEqual(result.total, 15)
         self.assertEqual(result.returned, 2)
+        self.assertEqual(result.start_at, 10)
+        self.assertEqual(result.max_results, 2)
+        self.assertTrue(result.has_more)
+        self.assertEqual(result.next_start_at, 12)
+        self.assertEqual(result.requested_fields[-1], "customfield_12345")
         self.assertEqual(result.issues[0].issue_key, "MFD-9212")
         self.assertEqual(result.issues[0].reporter, "Delta User")
+        self.assertEqual(result.issues[0].created, "2026-09-10T08:00:00.000+0000")
+        self.assertEqual(result.issues[0].priority, "High")
+        self.assertEqual(result.issues[0].extra_fields, {"customfield_12345": "Search facet"})
         self.assertEqual(result.issues[1].status, "Done")
         self.assertEqual(captured["method"], "POST")
         self.assertIn("/rest/api/2/search", str(captured["url"]))
@@ -130,9 +155,20 @@ class JiraClientTests(unittest.TestCase):
             captured["body"],
             {
                 "jql": 'assignee = "Dustin Marek" ORDER BY updated DESC',
-                "startAt": 0,
-                "maxResults": 10,
-                "fields": ["summary", "status", "issuetype", "project", "assignee", "reporter", "updated"],
+                "startAt": 10,
+                "maxResults": 2,
+                "fields": [
+                    "summary",
+                    "status",
+                    "issuetype",
+                    "project",
+                    "assignee",
+                    "reporter",
+                    "updated",
+                    "created",
+                    "priority",
+                    "customfield_12345",
+                ],
             },
         )
 
@@ -143,7 +179,13 @@ class JiraClientTests(unittest.TestCase):
                 400,
                 "Bad Request",
                 {},
-                '{"errorMessages": ["The value \"Dustin Marek\" does not exist for the field \"assignee\"."]}',
+                json.dumps(
+                    {
+                        "errorMessages": [
+                            'The value "Dustin Marek" does not exist for the field "assignee".'
+                        ]
+                    }
+                ),
             )
 
         client = JiraClient(

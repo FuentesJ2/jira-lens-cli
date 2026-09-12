@@ -81,6 +81,9 @@ class JiraSearchIssue:
     reporter: str
     updated: str
     source_url: str
+    created: str = ""
+    priority: str = ""
+    extra_fields: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -94,6 +97,10 @@ class JiraSearchResult:
     returned: int
     start_at: int
     max_results: int
+    order_by: str = "updated"
+    has_more: bool = False
+    next_start_at: int | None = None
+    requested_fields: list[str] = field(default_factory=list)
     issues: list[JiraSearchIssue] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -104,6 +111,10 @@ class JiraSearchResult:
             "returned": self.returned,
             "start_at": self.start_at,
             "max_results": self.max_results,
+            "order_by": self.order_by,
+            "has_more": self.has_more,
+            "next_start_at": self.next_start_at,
+            "requested_fields": list(self.requested_fields),
             "issues": [issue.to_dict() for issue in self.issues],
         }
 

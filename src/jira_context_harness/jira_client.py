@@ -64,6 +64,7 @@ class SearchRequest:
     max_results: int = 10
     fields_by_keys: bool = False
     mode: str = "raw-jql"
+    order_by: str = "custom-jql"
 
 
 @dataclass
@@ -607,21 +608,36 @@ class JiraClient:
             issues_payload = []
 
         issues = [
-            self._normalize_search_issue(issue_payload)
+            self._normalize_search_issue(issue_payload, requested_fields=request_model.fields)
             for issue_payload in issues_payload
             if isinstance(issue_payload, dict)
         ]
+        total = _int_value(response_payload.get("total"), default=len(issues))
+        start_at = _int_value(response_payload.get("startAt"), default=request_model.start_at)
+        max_results = _int_value(response_payload.get("maxResults"), default=request_model.max_results)
+        returned = len(issues)
+        next_start_at = start_at + returned
+        has_more = next_start_at < total
         return JiraSearchResult(
             query=request_model.jql,
             mode=request_model.mode,
-            total=_int_value(response_payload.get("total"), default=len(issues)),
-            returned=len(issues),
-            start_at=_int_value(response_payload.get("startAt"), default=request_model.start_at),
-            max_results=_int_value(response_payload.get("maxResults"), default=request_model.max_results),
+            total=total,
+            returned=returned,
+            start_at=start_at,
+            max_results=max_results,
+            order_by=request_model.order_by,
+            has_more=has_more,
+            next_start_at=next_start_at if has_more else None,
+            requested_fields=list(request_model.fields or []),
             issues=issues,
         )
 
-    def _normalize_search_issue(self, issue_payload: dict[str, Any]) -> JiraSearchIssue:
+    def _normalize_search_issue(
+        self,
+        issue_payload: dict[str, Any],
+        *,
+        requested_fields: Optional[Sequence[str]] = None,
+    ) -> JiraSearchIssue:
         fields = issue_payload.get("fields")
         if not isinstance(fields, dict):
             fields = {}
@@ -637,6 +653,9 @@ class JiraClient:
             reporter=_reporter_name(fields.get("reporter")),
             updated=_string_value(fields.get("updated")),
             source_url=f"{self._settings.base_url.rstrip('/')}/browse/{source_key}",
+            created=_string_value(fields.get("created")),
+            priority=_nested_name(fields.get("priority")),
+            extra_fields=_extract_search_extra_fields(fields, requested_fields=requested_fields),
         )
 
     def _extract_http_error_detail(self, exc: error.HTTPError) -> tuple[str, dict[str, str]]:
@@ -747,6 +766,32 @@ def _int_value(value: Any, *, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _extract_search_extra_fields(
+    fields: dict[str, Any],
+    *,
+    requested_fields: Optional[Sequence[str]],
+) -> dict[str, Any]:
+    if not requested_fields:
+        return {}
+
+    stable_fields = {
+        "summary",
+        "status",
+        "issuetype",
+        "project",
+        "assignee",
+        "reporter",
+        "updated",
+        "created",
+        "priority",
+    }
+    return {
+        field_name: fields[field_name]
+        for field_name in requested_fields
+        if field_name not in stable_fields and field_name in fields and fields[field_name] is not None
+    }
 
 
 def _extract_custom_fields(fields: dict[str, Any]) -> dict[str, Any]:

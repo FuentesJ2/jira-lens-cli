@@ -9,6 +9,22 @@ All commands in this skill use the isolated harness runtime:
 This file is for normal day-to-day CLI usage.
 Debugging and development-only commands live in [debugging.md](./debugging.md).
 
+## Update Or Reinstall Latest
+
+If the user needs to refresh the deployed tool, tell them to run this direct PowerShell command themselves:
+
+```powershell
+iwr -OutFile install-jira-context.ps1 https://github.com/FuentesJ2/jira-lens-cli/raw/main/install-jira-context.ps1; .\install-jira-context.ps1; .\.github\tools\jira-context\jira-context.exe
+```
+
+If first-run setup or auth is missing, tell the user to run this themselves in their terminal before continuing:
+
+```powershell
+.\.github\tools\jira-context\jira-context.exe configure
+```
+
+Do not ask the user to paste credentials into chat.
+
 ## Full Fetches
 
 If you need a clear, single-command pattern, use this exact shape with no wrapper logic around it:
@@ -31,13 +47,19 @@ Default agent person search:
 <workspace-root>/.github/tools/jira-context/jira-context.exe search person "Dustin Marek" --mode current-or-history --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/dustin-marek-current-or-history.json
 ```
 
+Triaged person search with explicit ordering and one extra Jira field:
+
+```powershell
+<workspace-root>/.github/tools/jira-context/jira-context.exe search person "Dustin Marek" --order-by created --field customfield_12345 --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/dustin-marek-created.json
+```
+
 Raw JQL power-user search:
 
 ```powershell
 <workspace-root>/.github/tools/jira-context/jira-context.exe search --jql "assignee = \"Dustin Marek\" OR assignee WAS \"Dustin Marek\" ORDER BY updated DESC" --save-normalized-to <workspace-root>/.github/tools/jira-context/jira-output/dustin-marek-search.json
 ```
 
-Read the saved normalized search file first. Use the `issues`, `query`, `total`, `returned`, `start_at`, and `max_results` keys directly from that JSON before deciding what to fetch next.
+Read the saved normalized search file first. Use the `issues`, `query`, `total`, `returned`, `start_at`, `max_results`, `order_by`, `requested_fields`, `has_more`, and `next_start_at` keys directly from that JSON before deciding what to fetch next.
 
 Example pivot fetch after the search returns `MFD-9212`:
 
