@@ -535,6 +535,121 @@ class CliOutputTests(unittest.TestCase):
         raw_mock.assert_called_once()
         json_mock.assert_called_once()
 
+    def test_main_fetch_relative_save_normalized_to_resolves_under_runtime_output_dir(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-1234",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://example.atlassian.net/browse/MFD-1234",
+            ),
+            raw_response={"key": "MFD-1234"},
+        )
+
+        expected_path = Path("C:/runtime/jira-output/MFD-1234-normalized.json")
+
+        with patch("pathlib.Path.mkdir"):
+            with patch("jira_context_harness.cli.NORMALIZED_OUTPUT_DIR", Path("C:/runtime/jira-output")):
+                with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+                    load_settings_mock.return_value = JiraSettings(
+                        base_url="https://example.atlassian.net",
+                        user_email="user@example.com",
+                        password="password",
+                        api_token="token",
+                        project_scope="MFD",
+                    )
+                    with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                        jira_client_mock.return_value.fetch_issue.return_value = result
+                        with patch(
+                            "jira_context_harness.cli._write_json_file",
+                            return_value=expected_path,
+                        ) as json_mock:
+                            stdout = io.StringIO()
+                            stderr = io.StringIO()
+                            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                                exit_code = main([
+                                    "fetch",
+                                    "test-case",
+                                    "MFD-1234",
+                                    "--save-normalized-to",
+                                    "MFD-1234-normalized.json",
+                                ])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(json_mock.call_args.args[0], expected_path)
+        self.assertIn(
+            "Saved normalized output to C:/runtime/jira-output/MFD-1234-normalized.json",
+            stderr.getvalue().replace("\\", "/"),
+        )
+
+    def test_main_fetch_absolute_save_paths_are_preserved_exactly(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="MFD-1234",
+                issue_kind="test-case",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="Approved",
+                issue_type="Test",
+                project_key="MFD",
+                assignee="User",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://example.atlassian.net/browse/MFD-1234",
+            ),
+            raw_response={"key": "MFD-1234", "fields": {"summary": "Summary"}},
+        )
+
+        normalized_path = Path("C:/tmp/MFD-1234-normalized.json")
+        raw_path = Path("C:/tmp/MFD-1234-raw.json")
+
+        with patch("pathlib.Path.mkdir"):
+            with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+                load_settings_mock.return_value = JiraSettings(
+                    base_url="https://example.atlassian.net",
+                    user_email="user@example.com",
+                    password="password",
+                    api_token="token",
+                    project_scope="MFD",
+                )
+                with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                    jira_client_mock.return_value.fetch_issue.return_value = result
+                    with patch(
+                        "jira_context_harness.cli._write_raw_payload_artifact",
+                        return_value=raw_path,
+                    ) as raw_mock:
+                        with patch(
+                            "jira_context_harness.cli._write_json_file",
+                            return_value=normalized_path,
+                        ) as json_mock:
+                            stdout = io.StringIO()
+                            stderr = io.StringIO()
+                            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                                exit_code = main([
+                                    "fetch",
+                                    "test-case",
+                                    "MFD-1234",
+                                    "--save-normalized-to",
+                                    "C:/tmp/MFD-1234-normalized.json",
+                                    "--save-raw-payload-to",
+                                    "C:/tmp/MFD-1234-raw.json",
+                                ])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(json_mock.call_args.args[0], normalized_path)
+        self.assertEqual(raw_mock.call_args.kwargs["artifact_path"], raw_path)
+        normalized_stderr = stderr.getvalue().replace("\\", "/")
+        self.assertIn("Saved normalized output to C:/tmp/MFD-1234-normalized.json", normalized_stderr)
+        self.assertIn("Saved raw payload JSON to C:/tmp/MFD-1234-raw.json", normalized_stderr)
+
     def test_main_save_normalized_to_suppresses_stdout(self) -> None:
         result = JiraFetchResult(
             issue=JiraIssueContext(
@@ -645,6 +760,67 @@ class CliOutputTests(unittest.TestCase):
         self.assertEqual(request_model.order_by, "custom-jql")
         jira_client_mock.return_value.search_issues.assert_called_once()
         json_mock.assert_called_once()
+
+    def test_main_search_relative_save_normalized_to_resolves_under_runtime_output_dir(self) -> None:
+        result = JiraSearchResult(
+            query='assignee = "Dustin Marek" ORDER BY updated DESC',
+            mode="raw-jql",
+            total=1,
+            returned=1,
+            start_at=0,
+            max_results=10,
+            order_by="custom-jql",
+            issues=[
+                JiraSearchIssue(
+                    issue_key="MFD-9212",
+                    summary="Summary",
+                    status="In Progress",
+                    issue_type="Problem Report",
+                    project_key="MFD",
+                    assignee="Dustin Marek",
+                    reporter="Delta User",
+                    updated="2026-09-11T12:34:56.000+0000",
+                    source_url="https://avjira/browse/MFD-9212",
+                )
+            ],
+        )
+
+        expected_path = Path("C:/runtime/jira-output/dustin-marek-search.json")
+
+        with patch("pathlib.Path.mkdir"):
+            with patch("jira_context_harness.cli.NORMALIZED_OUTPUT_DIR", Path("C:/runtime/jira-output")):
+                with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+                    load_settings_mock.return_value = JiraSettings(
+                        base_url="https://example.atlassian.net",
+                        user_email="user@example.com",
+                        password="password",
+                        api_token="token",
+                        project_scope="MFD",
+                    )
+                    with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                        jira_client_mock.return_value.search_issues.return_value = result
+                        with patch(
+                            "jira_context_harness.cli._write_json_file",
+                            return_value=expected_path,
+                        ) as json_mock:
+                            stdout = io.StringIO()
+                            stderr = io.StringIO()
+                            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                                exit_code = main([
+                                    "search",
+                                    "--jql",
+                                    'assignee = "Dustin Marek" ORDER BY updated DESC',
+                                    "--save-normalized-to",
+                                    "dustin-marek-search.json",
+                                ])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(json_mock.call_args.args[0], expected_path)
+        self.assertIn(
+            "Saved normalized output to C:/runtime/jira-output/dustin-marek-search.json",
+            stderr.getvalue().replace("\\", "/"),
+        )
 
     def test_main_search_person_builds_current_query_and_saves_output(self) -> None:
         result = JiraSearchResult(
