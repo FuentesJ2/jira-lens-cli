@@ -65,6 +65,18 @@ C:/Dev/.github/tools/jira-context/jira-context.exe fetch test-case MFD-9212 --sa
 9. If the CLI fails or the Jira/TestRay shape is unclear, use the troubleshooting commands in [debugging reference](./references/debugging.md) before concluding the data is unavailable.
 10. Unless the user explicitly asks for code impact, test impact, implementation comparison, or framework behavior, stop after the Jira/TestRay summary and `Next Query Layers`.
 
+## Requirement Context Contract
+- For `fetch requirement ...`, treat the Details and Main context fields as required context whenever Jira returns them.
+- After each requirement fetch, read the saved normalized JSON first and explicitly inspect these keys: `summary`, `description`, `status`, `issue_type`, `project_key`, `assignee`, `updated`, `links`, `comments`, `priority`, `resolution`, `labels`, `components`, `custom_fields.customfield_19801` (Data ID), `custom_fields.customfield_10170` (Vehicle), `custom_fields.customfield_10703` (Verification Method), `custom_fields.customfield_10708` (Rationale), `custom_fields.customfield_16505` (Requirement Level), and `custom_fields.customfield_18002` (Verification Environment).
+- Unless the user asked for a narrow section-only response, include the requirement `description` in the requirement summary (full text or a faithful excerpt).
+- If one or more required requirement-context fields are missing, run `discover-fields <issue-key> --include-raw`, map the display names from `raw_response.names`, then refetch with explicit `--field` additions for requirement details: `components`, `labels`, `priority`, `resolution`, `issuetype`, `customfield_10170`, `customfield_10703`, `customfield_10708`, `customfield_16505`, `customfield_18002`, and `customfield_19801`.
+- Do not assume one requirement proves schema stability across all projects; use discovery when field names or IDs appear to drift.
+
+## Test-Case Context Contract
+- For `fetch test-case ...`, treat test intent, requirement linkage, and execution evidence as required context when available.
+- After each test-case fetch, read the saved normalized JSON first and explicitly inspect these keys: `summary`, `description`, `status`, `issue_type`, `project_key`, `assignee`, `updated`, `links`, `comments`, and `test_management` (`test_steps`, `linked_requirements`, `linked_test_suites`, `linked_test_plans`, `automation_reference`, `defects`, `ad_hoc_test_runs`).
+- If required test-case context is missing, refetch with explicit `--field` additions and/or a focused `--section` query before summarizing.
+
 ## Focused Fetches
 - `links`
 - `comments`

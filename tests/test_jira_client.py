@@ -77,6 +77,10 @@ class JiraClientTests(unittest.TestCase):
                         },
                         "status": {"name": "Approved"},
                         "issuetype": {"name": "Test"},
+                        "priority": {"name": "Major"},
+                        "resolution": {"name": "Done"},
+                        "labels": ["DIAG_ADC"],
+                        "components": [{"name": "MFD Software"}],
                         "project": {"key": "MFD"},
                         "assignee": {"displayName": "Delta User"},
                         "updated": "2026-09-10T00:00:00.000+0000",
@@ -140,6 +144,10 @@ class JiraClientTests(unittest.TestCase):
         self.assertEqual(result.issue.links[0].status, "Approved")
         self.assertEqual(result.issue.comments[0].author, "Delta User")
         self.assertEqual(result.issue.comments[0].body, "Comment text")
+        self.assertEqual(result.issue.priority, "Major")
+        self.assertEqual(result.issue.resolution, "Done")
+        self.assertEqual(result.issue.labels, ["DIAG_ADC"])
+        self.assertEqual(result.issue.components, ["MFD Software"])
         self.assertNotIn("avatarUrls", json.dumps(result.raw_response))
         self.assertIn("fields=summary%2Cdescription%2Ccomment%2Cissuelinks", str(captured["url"]))
         self.assertEqual(captured["timeout"], 30)

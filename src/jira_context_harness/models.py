@@ -42,6 +42,10 @@ class JiraIssueContext:
     assignee: str
     updated: str
     source_url: str
+    priority: str = ""
+    resolution: str = ""
+    labels: list[str] = field(default_factory=list)
+    components: list[str] = field(default_factory=list)
     custom_fields: dict[str, Any] = field(default_factory=dict)
     links: list[JiraLink] = field(default_factory=list)
     comments: list[JiraComment] = field(default_factory=list)

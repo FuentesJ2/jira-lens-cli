@@ -512,6 +512,10 @@ class JiraClient:
             assignee=_assignee_name(fields.get("assignee")),
             updated=_string_value(fields.get("updated")),
             source_url=f"{self._settings.base_url.rstrip('/')}/browse/{source_key}",
+            priority=_nested_name(fields.get("priority")),
+            resolution=_resolution_name(fields.get("resolution")),
+            labels=_extract_string_list(fields.get("labels")),
+            components=_extract_component_names(fields.get("components")),
             custom_fields=_extract_custom_fields(fields),
             links=_extract_links(fields.get("issuelinks")),
             comments=_extract_comments(fields.get("comment")),
@@ -608,6 +612,35 @@ def _assignee_name(value: Any) -> str:
     if isinstance(value, dict):
         return _string_value(value.get("displayName") or value.get("accountId"))
     return ""
+
+
+def _resolution_name(value: Any) -> str:
+    if isinstance(value, dict):
+        return _string_value(value.get("name"))
+    return _string_value(value)
+
+
+def _extract_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [_string_value(item) for item in value if _string_value(item)]
+
+
+def _extract_component_names(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    names: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            name = _string_value(item.get("name"))
+            if name:
+                names.append(name)
+            continue
+        name = _string_value(item)
+        if name:
+            names.append(name)
+    return names
 
 
 def _extract_custom_fields(fields: dict[str, Any]) -> dict[str, Any]:

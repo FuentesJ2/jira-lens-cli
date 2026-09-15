@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from jira_context_harness.cli import build_parser, main, render_fetch_output
+from jira_context_harness.cli import _default_fields_for, build_parser, main, render_fetch_output
 from jira_context_harness.config import JiraSettings
 from jira_context_harness.jira_client import JiraAuthProbeAttempt
 from jira_context_harness.models import JiraFetchResult, JiraIssueContext
@@ -145,6 +145,29 @@ class BuildParserTests(unittest.TestCase):
         self.assertEqual(args.command, "inspect-page")
         self.assertEqual(args.issue_key, "MFD-7754")
         self.assertTrue(args.include_html)
+
+
+class DefaultFieldSelectionTests(unittest.TestCase):
+    def test_requirement_defaults_include_details_and_main_tab_fields(self) -> None:
+        fields = _default_fields_for("requirement")
+
+        self.assertIn("components", fields)
+        self.assertIn("labels", fields)
+        self.assertIn("priority", fields)
+        self.assertIn("resolution", fields)
+        self.assertIn("customfield_10170", fields)
+        self.assertIn("customfield_10703", fields)
+        self.assertIn("customfield_10708", fields)
+        self.assertIn("customfield_16505", fields)
+        self.assertIn("customfield_18002", fields)
+        self.assertIn("customfield_19801", fields)
+
+    def test_test_case_defaults_do_not_include_requirement_only_fields(self) -> None:
+        fields = _default_fields_for("test-case")
+
+        self.assertNotIn("customfield_19801", fields)
+        self.assertNotIn("customfield_16505", fields)
+        self.assertNotIn("components", fields)
 
 
 class CliOutputTests(unittest.TestCase):
@@ -285,6 +308,47 @@ class CliOutputTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn('"issue_key": "MFD-1234"', stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
+
+    def test_main_requirement_fetch_uses_requirement_default_fields(self) -> None:
+        result = JiraFetchResult(
+            issue=JiraIssueContext(
+                issue_key="DMFDREQ-2307",
+                issue_kind="requirement",
+                summary="Summary",
+                description="Description",
+                description_format="plain_text",
+                status="In Requirement Review",
+                issue_type="Requirement",
+                project_key="DMFDREQ",
+                assignee="",
+                updated="2026-09-10T00:00:00.000+0000",
+                source_url="https://avjira/browse/DMFDREQ-2307",
+            ),
+            raw_response={"key": "DMFDREQ-2307"},
+        )
+
+        with patch("jira_context_harness.cli.load_settings") as load_settings_mock:
+            load_settings_mock.return_value = JiraSettings(
+                base_url="https://avjira",
+                user_email="user@example.com",
+                password="password",
+                api_token="",
+                project_scope="DMFDREQ",
+            )
+            with patch("jira_context_harness.cli.JiraClient") as jira_client_mock:
+                jira_client_mock.return_value.fetch_issue.return_value = result
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                    exit_code = main(["fetch", "requirement", "DMFDREQ-2307"])
+
+        self.assertEqual(exit_code, 0)
+        request_model = jira_client_mock.return_value.fetch_issue.call_args.args[0]
+        self.assertIn("components", request_model.fields)
+        self.assertIn("labels", request_model.fields)
+        self.assertIn("priority", request_model.fields)
+        self.assertIn("resolution", request_model.fields)
+        self.assertIn("customfield_19801", request_model.fields)
 
     def test_main_include_raw_payload_writes_artifact_and_keeps_stdout_normalized(self) -> None:
         result = JiraFetchResult(

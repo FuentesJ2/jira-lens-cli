@@ -42,6 +42,19 @@ DEFAULT_TEST_CASE_FIELDS = [
     "issuelinks",
 ]
 
+DEFAULT_REQUIREMENT_EXTRA_FIELDS = [
+    "components",
+    "labels",
+    "priority",
+    "resolution",
+    "customfield_10170",  # Vehicle
+    "customfield_10703",  # Verification Method
+    "customfield_10708",  # Rationale
+    "customfield_16505",  # Requirement Level
+    "customfield_18002",  # Verification Environment
+    "customfield_19801",  # Data ID
+]
+
 RAW_PAYLOAD_ARTIFACT_DIR = raw_payload_artifact_dir()
 NORMALIZED_OUTPUT_DIR = normalized_output_dir()
 VALID_FETCH_VIEWS = {"normalized", "raw", "combined"}
@@ -51,6 +64,8 @@ LEGACY_FETCH_VIEW_ALIASES = {"both": "combined"}
 def _default_fields_for(issue_kind: str) -> list[str]:
     if issue_kind == "test-case":
         return list(DEFAULT_TEST_CASE_FIELDS)
+    if issue_kind == "requirement":
+        return list(DEFAULT_TEST_CASE_FIELDS) + list(DEFAULT_REQUIREMENT_EXTRA_FIELDS)
     return list(DEFAULT_TEST_CASE_FIELDS)
 
 
