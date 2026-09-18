@@ -75,6 +75,7 @@ C:/Dev/.github/tools/jira-context/jira-context.exe fetch test-case MFD-9212 --sa
 ## Test-Case Context Contract
 - For `fetch test-case ...`, treat test intent, requirement linkage, and execution evidence as required context when available.
 - After each test-case fetch, read the saved normalized JSON first and explicitly inspect these keys: `summary`, `description`, `status`, `issue_type`, `project_key`, `assignee`, `updated`, `links`, `comments`, and `test_management` (`test_steps`, `linked_requirements`, `linked_test_suites`, `linked_test_plans`, `automation_reference`, `defects`, `ad_hoc_test_runs`).
+- When linked requirements are present, inspect each linked requirement for `custom_fields.customfield_19801` (Data ID) and prepare a comparable list for output.
 - If required test-case context is missing, refetch with explicit `--field` additions and/or a focused `--section` query before summarizing.
 
 ## Focused Fetches
@@ -90,7 +91,9 @@ Use the exact command patterns in [commands reference](./references/commands.md)
 - Prefer normalized output for summaries.
 - Default to markdown tables whenever two or more comparable fields can be lined up cleanly.
 - Prefer tables over bullets for snapshots, requirement lists, linked issues, run history, step counts, statuses, owners, and other structured Jira/TestRay data.
-- For a test-case rundown, prefer this order: Snapshot, Current Requirements, Test Intent, Execution Signals, Related Issues, Comments Worth Reading, Next Query Layers.
+- In `Test Intent`, `Authored Steps` must show the existing Jira test-case STEPS from `test_management.test_steps`, not only a count.
+- When `test_management.test_steps` has entries, include an `Authored Steps` table with one row per step using `step_number`, `step_text`, and `expected_result_text`.
+- For a test-case rundown, prefer this order: Snapshot, Current Requirements, Test Intent, Authored Steps, Execution Signals, Related Issues, Comments Worth Reading, Next Query Layers.
 - Keep headings short and deliberate.
 - After an important table, add a short interpretation paragraph when there is a meaningful signal or mismatch to call out.
 - If the user asked for a pure section such as `comments` or `ad-hoc-runs`, summarize only that section unless they ask for more.
@@ -114,9 +117,15 @@ Preferred compact shape:
 The biggest signal is whether the current requirement and current test-case expectations still match.
 
 **Test Intent**
-| Objective | Authored Steps |
+| Objective | Authored Steps Count |
 | --- | --- |
 | Show that the DIAG XPDR page correctly displays the Callsign after setting Flight ID bytes. | 8 |
+
+**Authored Steps**
+| Step # | Step Text | Expected Result |
+| --- | --- | --- |
+| 1 | Set XPDR flight ID bytes for a valid callsign input. | Callsign displays the expected 8-character ASCII value on the DIAG XPDR page. |
+| 2 | Set an out-of-range byte pattern for the callsign field. | Display handling matches the requirement-defined out-of-range behavior. |
 
 **Execution Signals**
 | Latest Run | Status | Notable Result | Evidence |
