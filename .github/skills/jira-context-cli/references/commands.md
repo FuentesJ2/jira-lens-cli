@@ -9,6 +9,20 @@ All commands in this skill use the isolated harness runtime:
 This file is for normal day-to-day CLI usage.
 Debugging and development-only commands live in [debugging.md](./debugging.md).
 
+## Version Checks
+
+Preferred runtime identity check:
+
+```powershell
+<workspace-root>/.github/tools/jira-context/jira-context.exe version --format json
+```
+
+Fallback when command execution is unavailable:
+
+```powershell
+Get-Content <workspace-root>/.github/tools/jira-context/VERSION.json
+```
+
 ## Full Fetches
 
 If you need a clear, single-command pattern, use this exact shape with no wrapper logic around it:

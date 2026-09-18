@@ -62,6 +62,18 @@ Then run a first fetch:
 .\.github\tools\jira-context\jira-context.exe fetch requirement DMFDREQ-1448
 ```
 
+Check runtime version in that workspace:
+
+```powershell
+.\.github\tools\jira-context\jira-context.exe version --format json
+```
+
+If command execution is unavailable, inspect the bundle manifest instead:
+
+```powershell
+Get-Content .\.github\tools\jira-context\VERSION.json
+```
+
 If Jira settings are missing, the CLI will prompt once, save them locally, and retry the fetch automatically.
 
 ## CLI usage

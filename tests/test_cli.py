@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -146,6 +147,13 @@ class BuildParserTests(unittest.TestCase):
         self.assertEqual(args.issue_key, "MFD-7754")
         self.assertTrue(args.include_html)
 
+    def test_version_is_registered(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["version", "--format", "json"])
+
+        self.assertEqual(args.command, "version")
+        self.assertEqual(args.format, "json")
+
 
 class DefaultFieldSelectionTests(unittest.TestCase):
     def test_requirement_defaults_include_details_and_main_tab_fields(self) -> None:
@@ -171,6 +179,23 @@ class DefaultFieldSelectionTests(unittest.TestCase):
 
 
 class CliOutputTests(unittest.TestCase):
+    def test_main_version_json_output(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+            exit_code = main(["version", "--format", "json"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["name"], "jira-context-harness")
+        self.assertIn("version", payload)
+        self.assertIn("runtime_mode", payload)
+        self.assertIn("runtime_root", payload)
+        self.assertIn("executable", payload)
+        self.assertIn("python_version", payload)
+
     def test_render_fetch_output_supports_raw_json(self) -> None:
         result = JiraFetchResult(
             issue=JiraIssueContext(

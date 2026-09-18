@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import importlib.util
+import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -15,6 +18,7 @@ DIST_ROOT = PROJECT_ROOT / "dist" / "jira-context-portable"
 BUILD_ROOT = PROJECT_ROOT / "build" / "pyinstaller"
 SOURCE_SKILL_ROOT = PROJECT_ROOT / ".github" / "skills" / "jira-context-cli"
 DEFAULT_DEPLOY_ROOT = Path("C:/Dev/.github")
+VERSION_SOURCE_FILE = PROJECT_ROOT / "src" / "jira_context_harness" / "__init__.py"
 
 DEPLOYED_TOOL_README = """# jira-context Portable Runtime
 
@@ -27,6 +31,8 @@ The preferred deployed shape is a compiled `jira-context.exe` plus this folder's
 - Run `jira-context.exe` from this folder.
 - Configuration is stored in `.env` in this folder.
 - Saved JSON files, including normalized fetches and optional raw payload captures, go in `jira-output/` in this folder.
+- Check runtime identity with `jira-context.exe version --format json`.
+- If command execution is unavailable, inspect `VERSION.json` in this folder.
 """
 
 DEPLOYED_TOOL_GITIGNORE = """.env
@@ -153,6 +159,38 @@ def _write_file(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _load_project_version() -> str:
+    source = VERSION_SOURCE_FILE.read_text(encoding="utf-8")
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', source)
+    if match:
+        return match.group(1)
+    raise SystemExit(f"Unable to read package version from {VERSION_SOURCE_FILE}")
+
+
+def _current_git_commit_short() -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return ""
+    return completed.stdout.strip()
+
+
+def _bundle_version_manifest() -> str:
+    payload = {
+        "name": "jira-context-harness",
+        "version": _load_project_version(),
+        "built_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "git_commit_short": _current_git_commit_short(),
+    }
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
 def _assemble_bundle() -> Path:
     bundle_root = DIST_ROOT / "bundle"
     bundle_root.mkdir(parents=True, exist_ok=True)
@@ -164,6 +202,7 @@ def _assemble_bundle() -> Path:
     _copy_file(built_exe, bundle_root / "jira-context.exe")
     _write_file(bundle_root / ".gitignore", DEPLOYED_TOOL_GITIGNORE)
     _write_file(bundle_root / "README.md", DEPLOYED_TOOL_README)
+    _write_file(bundle_root / "VERSION.json", _bundle_version_manifest())
     _write_file(bundle_root / "jira-output" / "README.txt", DEPLOYED_JIRA_OUTPUT_README)
     return bundle_root
 

@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence, TextIO
 
+from jira_context_harness import __version__
 from jira_context_harness.config import (
     DEFAULT_AUTH_MODE,
     DEFAULT_BASE_URL,
@@ -27,7 +28,7 @@ from jira_context_harness.jira_client import (
     JiraClientError,
     JiraConfigurationError,
 )
-from jira_context_harness.runtime_paths import normalized_output_dir, raw_payload_artifact_dir
+from jira_context_harness.runtime_paths import normalized_output_dir, raw_payload_artifact_dir, runtime_root
 
 
 DEFAULT_TEST_CASE_FIELDS = [
@@ -89,6 +90,31 @@ def _write_json_file(path: Path, payload: object) -> Path:
     return path
 
 
+def _version_info() -> dict[str, str]:
+    runtime_mode = "frozen" if getattr(sys, "frozen", False) else "source"
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    return {
+        "name": "jira-context-harness",
+        "version": __version__,
+        "runtime_mode": runtime_mode,
+        "runtime_root": str(runtime_root()),
+        "executable": sys.executable,
+        "python_version": python_version,
+    }
+
+
+def _render_version_text(version_info: dict[str, str]) -> str:
+    return "\n".join(
+        [
+            f"{version_info['name']} {version_info['version']}",
+            f"runtime_mode: {version_info['runtime_mode']}",
+            f"runtime_root: {version_info['runtime_root']}",
+            f"executable: {version_info['executable']}",
+            f"python_version: {version_info['python_version']}",
+        ]
+    )
+
+
 def resolve_output_artifact_path(path_arg: str | Path, default_dir: Path) -> Path:
     candidate = Path(path_arg)
     if not candidate.is_absolute():
@@ -101,6 +127,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jira-context",
         description="Local CLI for JIRA context retrieval.",
+    )
+    parser.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=f"jira-context-harness {__version__}",
+        help="Print CLI version and exit.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -233,6 +266,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-raw",
         action="store_true",
         help="Include the full raw Jira issue response alongside the discovery report.",
+    )
+
+    version_parser = subparsers.add_parser(
+        "version",
+        help="Print CLI version and runtime metadata.",
+    )
+    version_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for version information.",
     )
 
     return parser
@@ -547,6 +591,14 @@ def _prompt_auth_secret_values(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "version":
+        version_info = _version_info()
+        if args.format == "json":
+            print(json.dumps(version_info, indent=2, sort_keys=True))
+        else:
+            print(_render_version_text(version_info))
+        return 0
 
     if args.command == "fetch":
         legacy_combined_requested = args.view == "combined"
