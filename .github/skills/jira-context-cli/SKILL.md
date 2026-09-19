@@ -26,6 +26,8 @@ Keep the deployed copy synchronized with this source file.
 - When requesting permission to run a Jira CLI command, ask for approval on the exact `jira-context.exe ...` command only. Do not generate PowerShell wrapper functions, pre/post directory scans, file-diff scaffolding, or other validation scripts unless the user explicitly asked for that deeper validation.
 - Never wrap a Jira fetch in a one-off PowerShell program that captures stdout, tracks `$LASTEXITCODE`, probes file existence, or prints sentinel blocks such as `RESULT_START`, `FIRST_OUTPUT_START`, or `SECOND_OUTPUT_START`.
 - If `--save-normalized-to` was used or should be used, do not inspect terminal transcript files such as Copilot chat `content.txt` resources. Open the saved normalized JSON file directly.
+- For normalized JSON analysis, read the saved JSON file directly using workspace file-reading tools (for example `read_file`). Do not run terminal parsing commands (PowerShell/Python/jq) to interpret normalized JSON unless the user explicitly requests command-based parsing output.
+- If the JSON is large, continue reading it in chunks with direct file reads instead of writing extraction wrappers.
 
 ## Direct Command Shape
 Ask to run or approve one direct CLI command in this shape and nothing around it:
